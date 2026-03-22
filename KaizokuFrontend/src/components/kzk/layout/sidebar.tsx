@@ -111,13 +111,21 @@ function SidebarDownloadCounters({ expanded }: { expanded: boolean }) {
 
   if (counters.length === 0) return null;
 
-  return (
+  // When collapsed, only show the highest-priority counter to prevent stacking
+  const visibleCounters = expanded ? counters : [counters[0]!];
+
+  // Build tooltip text for collapsed state (shows full summary)
+  const tooltipText = counters.map((c) => `${c.label}: ${c.value}`).join(", ");
+
+  const linkContent = (
     <Link
       href="/queue"
-      className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-accent/50 transition-colors group"
+      className={`flex items-center gap-2 rounded-lg hover:bg-accent/50 transition-colors group ${
+        expanded ? "px-3 py-2" : "justify-center px-2 py-2"
+      }`}
     >
       <div className="flex items-center gap-1.5">
-        {counters.map(({ value, color, Icon, label }) => (
+        {visibleCounters.map(({ value, color, Icon, label }) => (
           <div key={label} className="flex items-center gap-0.5">
             <Icon className={`h-3.5 w-3.5 ${color} shrink-0`} />
             <span className={`text-xs font-semibold ${color}`}>{value}</span>
@@ -138,6 +146,15 @@ function SidebarDownloadCounters({ expanded }: { expanded: boolean }) {
         )}
       </AnimatePresence>
     </Link>
+  );
+
+  if (expanded) return linkContent;
+
+  return (
+    <Tooltip delayDuration={0}>
+      <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
+      <TooltipContent side="right">{tooltipText}</TooltipContent>
+    </Tooltip>
   );
 }
 
