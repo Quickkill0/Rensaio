@@ -101,6 +101,24 @@ namespace KaizokuBackend.Controllers
             }
         }
 
+        [HttpPost("rename")]
+        [Authorize(Policy = "RequirePermission:CanEditSeries")]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(500)]
+        public async Task<ActionResult> RenameSeriesFilesAsync([FromQuery] Guid g, CancellationToken token = default)
+        {
+            try
+            {
+                await _archiveService.RenameSeriesFilesAsync(g, token).ConfigureAwait(false);
+                return Ok();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error renaming series files: {Message}", ex.Message);
+                return StatusCode(500, "Error renaming series files.");
+            }
+        }
+
         [HttpPost("update-all")]
         [Authorize(Policy = "RequirePermission:CanEditSeries")]
         [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]

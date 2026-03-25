@@ -105,6 +105,14 @@ export const seriesService = {
   },
 
   /**
+   * Rename all chapter files for a series to use the correct title from the selected title source
+   */
+  async renameSeriesFiles(id: string): Promise<void> {
+    const params = new URLSearchParams({ g: id });
+    return apiClient.post<void>(`/api/series/rename?${params.toString()}`, {});
+  },
+
+  /**
    * Update all series naming, filenames and ComicInfo.xml with current selected title
    */
   async updateAllSeries(): Promise<void> {

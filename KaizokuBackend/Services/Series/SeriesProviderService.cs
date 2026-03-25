@@ -126,7 +126,7 @@ namespace KaizokuBackend.Services.Series
 
                 {
                     decimal? maxChap = mi.Chapters.Max(c => c.Number);
-                    string filename = ArchiveHelperService.MakeFileNameSafe(mi.Provider, mi.Scanlator, mi.Title,
+                    string filename = ArchiveHelperService.MakeFileNameSafe(mi.Provider, mi.Scanlator, series.Title,
                         mi.Language, dst.Number, dst.Name, maxChap);
                     string? extension = Path.GetExtension(ch.Filename);
                     string newFilename = filename + extension;

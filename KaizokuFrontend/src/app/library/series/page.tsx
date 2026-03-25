@@ -2,7 +2,7 @@
 
 import { useSearchParams, useRouter } from "next/navigation";
 import { useState, useEffect, useMemo, memo, useRef, Suspense } from "react";
-import { useSeriesById, useSetProviderMatch, useDeleteSeries, useUpdateSeries, useVerifyIntegrity, useCleanupSeries } from "@/lib/api/hooks/useSeries";
+import { useSeriesById, useSetProviderMatch, useDeleteSeries, useUpdateSeries, useVerifyIntegrity, useCleanupSeries, useRenameSeriesFiles } from "@/lib/api/hooks/useSeries";
 import { useDownloadsForSeries } from "@/lib/api/hooks/useDownloads";
 import { seriesService } from "@/lib/api/services/seriesService";
 import { useQueryClient } from '@tanstack/react-query';
@@ -21,7 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Download, Plus, Power, Search, Trash2, Pause, Play, ExternalLink, ShieldCheck, AlertTriangle, CheckCircle, Clock, Calendar } from "lucide-react";
+import { Download, Plus, Power, Search, Trash2, Pause, Play, ExternalLink, ShieldCheck, AlertTriangle, CheckCircle, Clock, Calendar, FileText } from "lucide-react";
 import Image from 'next/image';
 import { SeriesStatus, QueueStatus, ArchiveResult, type ProviderExtendedInfo, type DownloadInfo, type ProviderMatch, type ExistingSource, type SeriesExtendedInfo, type SeriesIntegrityResult, type ArchiveIntegrityResult } from "@/lib/api/types";
 import { useSeriesContext } from "@/contexts/series-context";
@@ -726,6 +726,7 @@ function SeriesPageContent() {
   const deleteSeries = useDeleteSeries();
   const updateSeriesMutation = useUpdateSeries();
   const verifyIntegrity = useVerifyIntegrity();
+  const renameFiles = useRenameSeriesFiles();
   const cleanupSeries = useCleanupSeries();
   
   // Provider switch state management
@@ -1865,6 +1866,27 @@ function SeriesPageContent() {
                     >
                       <ShieldCheck className="h-4 w-4 sm:mr-1" />
                       <span className="hidden sm:inline">{verifyIntegrity.isPending ? "..." : "Verify"}</span>
+                    </Button>
+                  )}
+
+                  {canEdit && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="h-8 text-xs sm:text-sm"
+                      onClick={async () => {
+                        if (!seriesId) return;
+                        try {
+                          await renameFiles.mutateAsync(seriesId);
+                          setShowVerifySuccessDialog(true);
+                        } catch {
+                          // Error handled by mutation
+                        }
+                      }}
+                      disabled={renameFiles.isPending}
+                    >
+                      <FileText className="h-4 w-4 sm:mr-1" />
+                      <span className="hidden sm:inline">{renameFiles.isPending ? "..." : "Rename"}</span>
                     </Button>
                   )}
 

@@ -173,6 +173,20 @@ export const useCleanupSeries = () => {
 };
 
 /**
+ * Hook to rename series files to use the correct selected title
+ */
+export const useRenameSeriesFiles = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => seriesService.renameSeriesFiles(id),
+    onSuccess: (_, id) => {
+      void queryClient.invalidateQueries({ queryKey: ['series', 'detail', id] });
+    },
+  });
+};
+
+/**
  * Hook to update all series naming, filenames and ComicInfo.xml
  */
 export const useUpdateAllSeries = () => {
