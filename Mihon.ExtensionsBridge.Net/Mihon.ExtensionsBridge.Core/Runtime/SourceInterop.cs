@@ -268,30 +268,49 @@ namespace Mihon.ExtensionsBridge.Core.Runtime
         private async Task<string?> TryRecoverFullTitleAsync(string? pageUrl, string truncatedTitle, CancellationToken token)
         {
             if (string.IsNullOrEmpty(pageUrl) || _httpSource == null)
+            {
+                _logger.LogInformation("TitleRecovery: skipped — pageUrl={Url}, httpSource={HasSource}", pageUrl, _httpSource != null);
                 return null;
+            }
 
             try
             {
+                _logger.LogInformation("TitleRecovery: fetching HTML from {Url}", pageUrl);
                 Request request = RequestsKt.GET(pageUrl, _httpSource.getHeaders(), CacheControl.FORCE_NETWORK);
                 var response = await Task.Run(() => _httpSource.getClient().newCall(request).execute(), token).ConfigureAwait(false);
                 if (response == null || response.code() != 200)
+                {
+                    _logger.LogWarning("TitleRecovery: HTTP {Code} from {Url}", response?.code(), pageUrl);
                     return null;
+                }
 
                 var body = response.body();
                 if (body == null)
+                {
+                    _logger.LogWarning("TitleRecovery: null body from {Url}", pageUrl);
                     return null;
+                }
 
                 string html = body.@string();
                 if (string.IsNullOrEmpty(html))
+                {
+                    _logger.LogWarning("TitleRecovery: empty HTML from {Url}", pageUrl);
                     return null;
+                }
+
+                _logger.LogInformation("TitleRecovery: got {Len} chars of HTML", html.Length);
 
                 // Strip the trailing ellipsis to get the prefix we expect the full title to start with
                 string prefix = truncatedTitle.TrimEnd('.').TrimEnd('\u2026').TrimEnd();
 
                 // Try extraction strategies in priority order
-                string? candidate = ExtractMetaContent(html, "og:title")
-                                 ?? ExtractMetaContent(html, "twitter:title")
-                                 ?? ExtractHtmlTitle(html);
+                string? ogTitle = ExtractMetaContent(html, "og:title");
+                string? twitterTitle = ExtractMetaContent(html, "twitter:title");
+                string? htmlTitle = ExtractHtmlTitle(html);
+                string? candidate = ogTitle ?? twitterTitle ?? htmlTitle;
+
+                _logger.LogInformation("TitleRecovery: og:title=\"{Og}\", twitter:title=\"{Tw}\", <title>=\"{Html}\", prefix=\"{Prefix}\"",
+                    ogTitle ?? "(null)", twitterTitle ?? "(null)", htmlTitle ?? "(null)", prefix);
 
                 if (!string.IsNullOrEmpty(candidate))
                 {
@@ -299,13 +318,20 @@ namespace Mihon.ExtensionsBridge.Core.Runtime
                     // Validate: the candidate must start with the truncated prefix and be longer
                     if (candidate.Length > truncatedTitle.Length && candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                         return candidate;
+
+                    _logger.LogInformation("TitleRecovery: candidate rejected — len={CandLen} vs truncLen={TruncLen}, startsWith={Starts}",
+                        candidate.Length, truncatedTitle.Length, candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+                }
+                else
+                {
+                    _logger.LogWarning("TitleRecovery: no title found in any meta tag or <title>");
                 }
 
                 return null;
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Failed to recover full title from HTML for {Url}", pageUrl);
+                _logger.LogWarning(ex, "TitleRecovery: exception fetching {Url}", pageUrl);
                 return null;
             }
         }
