@@ -1917,6 +1917,33 @@ function SeriesPageContent() {
         </CardHeader>
       </Card>
 
+      {/* Rename notification — shown when title was recovered from a truncated source name */}
+      {series.needsRename && canEdit && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
+          <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0" />
+          <span className="flex-1 text-foreground">
+            The full title was recovered from the source. The storage folder and filenames still use the old truncated name.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-shrink-0 border-amber-500/40 hover:bg-amber-500/20"
+            onClick={async () => {
+              if (!seriesId) return;
+              try {
+                await renameFiles.mutateAsync(seriesId);
+              } catch {
+                // Error handled by mutation
+              }
+            }}
+            disabled={renameFiles.isPending}
+          >
+            <FileText className="h-4 w-4 mr-1.5" />
+            {renameFiles.isPending ? "Renaming..." : "Rename Files"}
+          </Button>
+        </div>
+      )}
+
       {/* Below hero: Sources (2/3) + Downloads (1/3) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 w-full">
 

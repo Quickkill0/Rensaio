@@ -355,6 +355,7 @@ export interface BaseSeriesInfo {
   hasUnknown: boolean;
   pausedDownloads: boolean;
   startFromChapter?: number;
+  needsRename: boolean;
 }
 
 export interface SeriesInfo extends BaseSeriesInfo {

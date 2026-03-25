@@ -123,13 +123,81 @@ namespace KaizokuBackend.Services.Series
         }
 
         /// <summary>
-        /// Renames all chapter files for a series to use the correct title from the selected title source
+        /// Renames the storage folder (if the title changed) and all chapter files for a series
+        /// to use the correct title. Also clears the <see cref="SeriesEntity.NeedsRename"/> flag.
         /// </summary>
         /// <param name="seriesId">The series ID to rename files for</param>
         /// <param name="token">Cancellation token</param>
         public async Task RenameSeriesFilesAsync(Guid seriesId, CancellationToken token = default)
         {
+            var series = await _db.Series.FirstOrDefaultAsync(s => s.Id == seriesId, token).ConfigureAwait(false);
+            if (series != null)
+            {
+                await RenameStorageFolderIfNeededAsync(series, token).ConfigureAwait(false);
+            }
+
             await _archiveHelper.UpdateTitleAndAddComicInfoAsync(seriesId, true, token).ConfigureAwait(false);
+
+            // Clear the flag after a successful rename
+            if (series != null && series.NeedsRename)
+            {
+                series.NeedsRename = false;
+                await _db.SaveChangesAsync(token).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Renames the physical storage folder when the series title no longer matches the folder name.
+        /// This happens after a truncated title is recovered to its full version.
+        /// </summary>
+        private async Task RenameStorageFolderIfNeededAsync(SeriesEntity series, CancellationToken token)
+        {
+            SettingsDto settings = await _settings.GetSettingsAsync(token).ConfigureAwait(false);
+            string currentFullPath = Path.Combine(settings.StorageFolder, series.StoragePath);
+
+            // Compute what the folder name should be based on the current (corrected) title
+            string expectedFolderName = series.Title.MakeFolderNameSafe();
+            string currentFolderName = Path.GetFileName(
+                series.StoragePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+            if (string.Equals(expectedFolderName, currentFolderName, StringComparison.Ordinal))
+                return; // Already matches
+
+            // Build the new path by replacing only the last segment (the folder name)
+            string parentPath = Path.GetDirectoryName(currentFullPath)
+                                ?? settings.StorageFolder;
+            string newFullPath = Path.Combine(parentPath, expectedFolderName);
+
+            if (!Directory.Exists(currentFullPath))
+            {
+                _logger.LogWarning("Storage folder does not exist, skipping folder rename: {Path}", currentFullPath);
+                return;
+            }
+
+            if (Directory.Exists(newFullPath))
+            {
+                _logger.LogWarning("Target folder already exists, skipping folder rename: {Path}", newFullPath);
+                return;
+            }
+
+            try
+            {
+                Directory.Move(currentFullPath, newFullPath);
+
+                // Update the StoragePath in the DB (relative path from storage root)
+                string parentRelative = Path.GetDirectoryName(series.StoragePath)
+                                        ?? string.Empty;
+                series.StoragePath = string.IsNullOrEmpty(parentRelative)
+                    ? expectedFolderName
+                    : Path.Combine(parentRelative, expectedFolderName);
+
+                await _db.SaveChangesAsync(token).ConfigureAwait(false);
+                _logger.LogInformation("Renamed storage folder from \"{Old}\" to \"{New}\"", currentFullPath, newFullPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to rename storage folder from \"{Old}\" to \"{New}\"", currentFullPath, newFullPath);
+            }
         }
 
         /// <summary>
