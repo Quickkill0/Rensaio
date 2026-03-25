@@ -6,6 +6,7 @@ using eu.kanade.tachiyomi.source.model;
 using Microsoft.Extensions.Logging;
 using okhttp3;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Mihon.ExtensionsBridge.Core.Extensions;
 using Mihon.ExtensionsBridge.Core.Utilities;
 using Mihon.ExtensionsBridge.Models;
@@ -230,8 +231,110 @@ namespace Mihon.ExtensionsBridge.Core.Runtime
                 var mangaDetails = await _httpSource.fetchMangaDetails(mangaImpl).ConsumeObservableOneOrDefaultAsync<SManga>(mangaImpl, token).ConfigureAwait(false);
                 ParsedManga m = mangaDetails!.ToManga<ParsedManga>(manga);
                 m.RealUrl = _httpSource.getMangaUrl(mangaDetails ?? mangaImpl);
+
+                // Many Tachiyomi extensions don't set the title in mangaDetailsParse because the
+                // Tachiyomi app already knows it from search results. However, search results often
+                // contain truncated titles (e.g. "Long Title..."). When detected, fetch the manga
+                // detail page HTML directly and extract the full title from metadata tags.
+                if (IsTitleTruncated(m.Title))
+                {
+                    string recovered = await TryRecoverFullTitleAsync(m.RealUrl, m.Title, token).ConfigureAwait(false);
+                    if (!string.IsNullOrEmpty(recovered))
+                    {
+                        _logger.LogDebug("Recovered full title from HTML: \"{Recovered}\" (was \"{Truncated}\")", recovered, m.Title);
+                        m.Title = recovered;
+                    }
+                }
+
                 return m;
             }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Determines whether a title appears to be truncated by the source.
+        /// </summary>
+        private static bool IsTitleTruncated(string? title)
+        {
+            if (string.IsNullOrEmpty(title))
+                return false;
+            return title.EndsWith("...") || title.EndsWith("\u2026"); // Unicode ellipsis
+        }
+
+        /// <summary>
+        /// Attempts to recover the full manga title by fetching the detail page HTML
+        /// and extracting the title from og:title, twitter:title, or the HTML title tag.
+        /// Uses the source's own HTTP client to preserve headers, cookies, and authentication.
+        /// </summary>
+        private async Task<string?> TryRecoverFullTitleAsync(string? pageUrl, string truncatedTitle, CancellationToken token)
+        {
+            if (string.IsNullOrEmpty(pageUrl) || _httpSource == null)
+                return null;
+
+            try
+            {
+                Request request = RequestsKt.GET(pageUrl, _httpSource.getHeaders(), CacheControl.FORCE_NETWORK);
+                var response = await Task.Run(() => _httpSource.getClient().newCall(request).execute(), token).ConfigureAwait(false);
+                if (response == null || response.code() != 200)
+                    return null;
+
+                var body = response.body();
+                if (body == null)
+                    return null;
+
+                string html = body.@string();
+                if (string.IsNullOrEmpty(html))
+                    return null;
+
+                // Strip the trailing ellipsis to get the prefix we expect the full title to start with
+                string prefix = truncatedTitle.TrimEnd('.').TrimEnd('\u2026').TrimEnd();
+
+                // Try extraction strategies in priority order
+                string? candidate = ExtractMetaContent(html, "og:title")
+                                 ?? ExtractMetaContent(html, "twitter:title")
+                                 ?? ExtractHtmlTitle(html);
+
+                if (!string.IsNullOrEmpty(candidate))
+                {
+                    candidate = System.Net.WebUtility.HtmlDecode(candidate).Trim();
+                    // Validate: the candidate must start with the truncated prefix and be longer
+                    if (candidate.Length > truncatedTitle.Length && candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        return candidate;
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to recover full title from HTML for {Url}", pageUrl);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Extracts the content attribute from a meta tag with the given property or name.
+        /// </summary>
+        private static string? ExtractMetaContent(string html, string propertyName)
+        {
+            // Match: <meta property="og:title" content="..."> or <meta name="twitter:title" content="...">
+            // Also handles content before property/name, single quotes, and self-closing tags.
+            var pattern = $@"<meta\s[^>]*?(?:property|name)\s*=\s*[""']{Regex.Escape(propertyName)}[""'][^>]*?content\s*=\s*[""']([^""']+)[""']";
+            var match = Regex.Match(html, pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            if (match.Success)
+                return match.Groups[1].Value;
+
+            // Try reversed attribute order: content before property
+            var reversedPattern = $@"<meta\s[^>]*?content\s*=\s*[""']([^""']+)[""'][^>]*?(?:property|name)\s*=\s*[""']{Regex.Escape(propertyName)}[""']";
+            match = Regex.Match(html, reversedPattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            return match.Success ? match.Groups[1].Value : null;
+        }
+
+        /// <summary>
+        /// Extracts the text content from the HTML title tag.
+        /// </summary>
+        private static string? ExtractHtmlTitle(string html)
+        {
+            var match = Regex.Match(html, @"<title[^>]*>([^<]+)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            return match.Success ? match.Groups[1].Value : null;
         }
 
         /// <summary>
