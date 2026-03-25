@@ -268,70 +268,82 @@ namespace Mihon.ExtensionsBridge.Core.Runtime
         private async Task<string?> TryRecoverFullTitleAsync(string? pageUrl, string truncatedTitle, CancellationToken token)
         {
             if (string.IsNullOrEmpty(pageUrl) || _httpSource == null)
-            {
-                _logger.LogInformation("TitleRecovery: skipped — pageUrl={Url}, httpSource={HasSource}", pageUrl, _httpSource != null);
                 return null;
-            }
 
             try
             {
-                _logger.LogInformation("TitleRecovery: fetching HTML from {Url}", pageUrl);
                 Request request = RequestsKt.GET(pageUrl, _httpSource.getHeaders(), CacheControl.FORCE_NETWORK);
                 var response = await Task.Run(() => _httpSource.getClient().newCall(request).execute(), token).ConfigureAwait(false);
                 if (response == null || response.code() != 200)
-                {
-                    _logger.LogWarning("TitleRecovery: HTTP {Code} from {Url}", response?.code(), pageUrl);
                     return null;
-                }
 
                 var body = response.body();
                 if (body == null)
-                {
-                    _logger.LogWarning("TitleRecovery: null body from {Url}", pageUrl);
                     return null;
-                }
 
                 string html = body.@string();
                 if (string.IsNullOrEmpty(html))
-                {
-                    _logger.LogWarning("TitleRecovery: empty HTML from {Url}", pageUrl);
                     return null;
-                }
 
-                _logger.LogInformation("TitleRecovery: got {Len} chars of HTML", html.Length);
-
-                // Strip the trailing ellipsis to get the prefix we expect the full title to start with
+                // Strip the trailing ellipsis to get the prefix we expect the full title to contain
                 string prefix = truncatedTitle.TrimEnd('.').TrimEnd('\u2026').TrimEnd();
 
-                // Try extraction strategies in priority order
-                string? ogTitle = ExtractMetaContent(html, "og:title");
-                string? twitterTitle = ExtractMetaContent(html, "twitter:title");
-                string? htmlTitle = ExtractHtmlTitle(html);
-                string? candidate = ogTitle ?? twitterTitle ?? htmlTitle;
+                // Gather all available title sources
+                string?[] rawCandidates = {
+                    ExtractMetaContent(html, "og:title"),
+                    ExtractMetaContent(html, "twitter:title"),
+                    ExtractHtmlTitle(html)
+                };
 
-                _logger.LogInformation("TitleRecovery: og:title=\"{Og}\", twitter:title=\"{Tw}\", <title>=\"{Html}\", prefix=\"{Prefix}\"",
-                    ogTitle ?? "(null)", twitterTitle ?? "(null)", htmlTitle ?? "(null)", prefix);
-
-                if (!string.IsNullOrEmpty(candidate))
+                // For each candidate, decode HTML entities and extract the substring starting at the prefix.
+                // Site-specific junk (e.g. "[Manga]: ", " Read", " Manga Online for Free") gets stripped
+                // by finding where the known prefix begins and extracting from there.
+                List<string> extractions = new();
+                foreach (var raw in rawCandidates)
                 {
-                    candidate = System.Net.WebUtility.HtmlDecode(candidate).Trim();
-                    // Validate: the candidate must start with the truncated prefix and be longer
-                    if (candidate.Length > truncatedTitle.Length && candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                        return candidate;
-
-                    _logger.LogInformation("TitleRecovery: candidate rejected — len={CandLen} vs truncLen={TruncLen}, startsWith={Starts}",
-                        candidate.Length, truncatedTitle.Length, candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+                    if (string.IsNullOrEmpty(raw))
+                        continue;
+                    string decoded = System.Net.WebUtility.HtmlDecode(raw).Trim();
+                    int idx = decoded.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
+                    if (idx >= 0)
+                    {
+                        string extracted = decoded.Substring(idx);
+                        if (extracted.Length > truncatedTitle.Length)
+                            extractions.Add(extracted);
+                    }
                 }
-                else
+
+                if (extractions.Count == 0)
+                    return null;
+
+                if (extractions.Count == 1)
                 {
-                    _logger.LogWarning("TitleRecovery: no title found in any meta tag or <title>");
+                    // Single match — return as-is (may have trailing site junk, still better than truncated)
+                    string result = extractions[0].Trim();
+                    _logger.LogDebug("TitleRecovery: single extraction \"{Result}\"", result);
+                    return result.Length > truncatedTitle.Length ? result : null;
                 }
 
-                return null;
+                // Multiple matches — find the longest common prefix across all extractions.
+                // This strips trailing site-specific junk that differs between meta tags
+                // (e.g. " Read" vs " Manga Online for Free"), leaving only the real title.
+                string lcp = extractions[0];
+                for (int i = 1; i < extractions.Count; i++)
+                {
+                    int len = Math.Min(lcp.Length, extractions[i].Length);
+                    int j = 0;
+                    while (j < len && char.ToLowerInvariant(lcp[j]) == char.ToLowerInvariant(extractions[i][j]))
+                        j++;
+                    lcp = lcp.Substring(0, j);
+                }
+
+                string recovered = lcp.Trim();
+                _logger.LogDebug("TitleRecovery: LCP of {Count} extractions = \"{Recovered}\"", extractions.Count, recovered);
+                return recovered.Length > truncatedTitle.Length ? recovered : null;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "TitleRecovery: exception fetching {Url}", pageUrl);
+                _logger.LogDebug(ex, "TitleRecovery: exception fetching {Url}", pageUrl);
                 return null;
             }
         }
