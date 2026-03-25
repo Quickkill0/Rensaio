@@ -1482,12 +1482,14 @@ function SeriesPageContent() {
   // Handler for verify integrity button click
   const handleVerifyIntegrityClick = async () => {
     if (!seriesId) return;
-    
+
     try {
-      
       const result = await verifyIntegrity.mutateAsync(seriesId);
       setVerifyResult(result);
-      
+
+      // Re-fetch series data — verify may have recovered a truncated title
+      await queryClient.invalidateQueries({ queryKey: ['series', 'detail', seriesId] });
+
       if (result.success) {
         // Show success dialog
         setShowVerifyDialog(true);
