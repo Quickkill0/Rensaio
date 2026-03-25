@@ -148,7 +148,14 @@ namespace KaizokuBackend.Services.Search
 
                                 searchResult.Mangas = uniqueSeries;
                                 results.Add((source.keyword, source.ps, searchResult));
+                                _logger.LogInformation("Provider {Name} returned {Count} result(s) for '{Keyword}'.",
+                                    source.ps.Name, uniqueSeries.Count, source.keyword);
                                 break;
+                            }
+                            else
+                            {
+                                _logger.LogInformation("Provider {Name} returned 0 results for '{Keyword}' (attempt {Attempt}/3).",
+                                    source.ps.Name, source.keyword, attempt + 1);
                             }
                         }
                         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -258,6 +265,13 @@ namespace KaizokuBackend.Services.Search
 
                                 searchResult.Mangas = uniqueSeries;
                                 results.Add((providerId, src.Language, searchResult));
+                                _logger.LogInformation("Provider {Name} returned {Count} result(s) for '{Keyword}'.",
+                                    sourceDict[providerId].Name, uniqueSeries.Count, keyword);
+                            }
+                            else
+                            {
+                                _logger.LogInformation("Provider {Name} returned 0 results for '{Keyword}'.",
+                                    sourceDict[providerId].Name, keyword);
                             }
                         }
                         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -273,6 +287,9 @@ namespace KaizokuBackend.Services.Search
                             _logger.LogError(ex, "Error searching provider {Name}: {Message}", sourceDict[providerId].Name, ex.Message);
                         }
                     }).ConfigureAwait(false);
+
+                _logger.LogInformation("Search for '{Keyword}' complete: {ResultCount}/{TotalProviders} providers returned results.",
+                    keyword, results.Count, sourceDict.Count);
 
                 // Process and link similar series
                 var allSeries = new List<(ParsedManga Manga, string ProviderId, string Language)>();
