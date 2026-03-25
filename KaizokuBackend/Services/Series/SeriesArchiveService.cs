@@ -262,6 +262,17 @@ namespace KaizokuBackend.Services.Series
                     string oldTitle = series.Title;
                     series.Title = details.Title;
                     series.NeedsRename = true;
+
+                    // Also update all provider titles that still have the truncated name
+                    if (series.Sources != null)
+                    {
+                        foreach (var src2 in series.Sources)
+                        {
+                            if (src2.Title.Length < details.Title.Length)
+                                src2.Title = details.Title;
+                        }
+                    }
+
                     await _db.SaveChangesAsync(token).ConfigureAwait(false);
                     _logger.LogInformation("Recovered full title: \"{OldTitle}\" → \"{NewTitle}\"", oldTitle, details.Title);
                 }
