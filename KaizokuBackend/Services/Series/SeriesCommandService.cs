@@ -415,8 +415,10 @@ namespace KaizokuBackend.Services.Series
                 return JobResult.Failed;
             }
 
-            // If the series title looks truncated, try to recover the full title from the source.
-            // This handles series that were added before the truncation fix in GetDetailsAsync.
+            // If the series title ends with "..." or "…", try to recover the full title.
+            // This catches newly added series with truncated search result titles.
+            // For older series where "..." was already stripped, the user can click Verify
+            // on the series page which does an unconditional check against the source.
             if (IsTitleTruncated(series.Title))
             {
                 await TryRecoverTruncatedTitleAsync(series, serie, src, token).ConfigureAwait(false);

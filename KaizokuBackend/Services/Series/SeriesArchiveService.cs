@@ -207,15 +207,15 @@ namespace KaizokuBackend.Services.Series
         }
 
         /// <summary>
-        /// Checks if the series title is truncated (ends with "..." or "…") and attempts
-        /// to recover the full title by calling GetDetailsAsync on the first active source.
-        /// If recovered, updates the DB title and sets NeedsRename so the user can fix file/folder names.
+        /// Queries the source for the full series title via GetDetailsAsync (which includes
+        /// HTML meta-tag recovery for truncated titles). If the source returns a longer title
+        /// than what's in the DB, updates it and sets NeedsRename so the user can fix file/folder names.
+        /// This catches both titles ending with "..." AND titles that had the "..." already stripped
+        /// by the old workaround in FillSeriesFromProviderSeriesDetails.
         /// </summary>
         private async Task TryRecoverTruncatedTitleAsync(SeriesEntity series, CancellationToken token)
         {
             if (string.IsNullOrEmpty(series.Title))
-                return;
-            if (!series.Title.EndsWith("...") && !series.Title.EndsWith("\u2026"))
                 return;
 
             // Find an active source to query
@@ -235,6 +235,7 @@ namespace KaizokuBackend.Services.Series
                 if (details == null || string.IsNullOrEmpty(details.Title))
                     return;
 
+                // Compare: source title must be longer and not itself truncated
                 bool detailsTruncated = details.Title.EndsWith("...") || details.Title.EndsWith("\u2026");
                 if (!detailsTruncated && details.Title.Length > series.Title.Length)
                 {
