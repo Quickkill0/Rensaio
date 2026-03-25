@@ -216,24 +216,44 @@ namespace KaizokuBackend.Services.Series
         private async Task TryRecoverTruncatedTitleAsync(SeriesEntity series, CancellationToken token)
         {
             if (string.IsNullOrEmpty(series.Title))
+            {
+                _logger.LogDebug("TryRecoverTitle: series {Id} has empty title, skipping", series.Id);
                 return;
+            }
+
+            _logger.LogInformation("TryRecoverTitle: checking \"{Title}\" (sources: {Count})", series.Title, series.Sources?.Count ?? 0);
 
             // Find an active source to query
             SeriesProviderEntity? provider = series.Sources
                 .FirstOrDefault(s => !s.IsDisabled && !s.IsUninstalled && !s.IsUnknown && !string.IsNullOrEmpty(s.MihonProviderId));
             if (provider == null)
+            {
+                _logger.LogWarning("TryRecoverTitle: no active source found for series {Id}. Sources: {Sources}",
+                    series.Id,
+                    string.Join(", ", series.Sources.Select(s => $"{s.Provider}(disabled={s.IsDisabled},uninstalled={s.IsUninstalled},unknown={s.IsUnknown},mihon={s.MihonProviderId})")));
                 return;
+            }
 
             try
             {
+                _logger.LogInformation("TryRecoverTitle: querying source {Provider} (mihon={MihonId})", provider.Provider, provider.MihonProviderId);
                 var src = await _mihon.SourceFromProviderIdAsync(provider.MihonProviderId!, token).ConfigureAwait(false);
                 var manga = provider.ToManga();
                 if (manga == null)
+                {
+                    _logger.LogWarning("TryRecoverTitle: ToManga() returned null for provider {Id}", provider.Id);
                     return;
+                }
 
                 var details = await src.GetDetailsAsync(manga, token).ConfigureAwait(false);
                 if (details == null || string.IsNullOrEmpty(details.Title))
+                {
+                    _logger.LogWarning("TryRecoverTitle: GetDetailsAsync returned null/empty title");
                     return;
+                }
+
+                _logger.LogInformation("TryRecoverTitle: source returned \"{SourceTitle}\" (len={SrcLen}), DB has \"{DbTitle}\" (len={DbLen})",
+                    details.Title, details.Title.Length, series.Title, series.Title.Length);
 
                 // Compare: source title must be longer and not itself truncated
                 bool detailsTruncated = details.Title.EndsWith("...") || details.Title.EndsWith("\u2026");
@@ -245,10 +265,15 @@ namespace KaizokuBackend.Services.Series
                     await _db.SaveChangesAsync(token).ConfigureAwait(false);
                     _logger.LogInformation("Recovered full title: \"{OldTitle}\" → \"{NewTitle}\"", oldTitle, details.Title);
                 }
+                else
+                {
+                    _logger.LogInformation("TryRecoverTitle: no recovery needed (truncated={Trunc}, srcLen={SrcLen} vs dbLen={DbLen})",
+                        detailsTruncated, details.Title.Length, series.Title.Length);
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Failed to recover truncated title for series {Id}", series.Id);
+                _logger.LogWarning(ex, "Failed to recover truncated title for series {Id}", series.Id);
             }
         }
 
