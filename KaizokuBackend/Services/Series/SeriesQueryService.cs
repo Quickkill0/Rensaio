@@ -7,6 +7,7 @@ using KaizokuBackend.Services.Providers;
 using KaizokuBackend.Services.Settings;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Mihon.ExtensionsBridge.Core.Extensions;
 using System.Net;
 
@@ -20,13 +21,27 @@ namespace KaizokuBackend.Services.Series
         private readonly AppDbContext _db;
         private readonly SettingsService _settings;
         private readonly ProviderCacheService _providerCache;
+        private readonly IMemoryCache _cache;
         private readonly ILogger<SeriesQueryService> _logger;
 
-        public SeriesQueryService(AppDbContext db, SettingsService settings, ProviderCacheService providerCache, ILogger<SeriesQueryService> logger)
+        // Hard cap on rows scanned in-memory when a genre filter is applied. The
+        // Genre column is stored as a value-converted CSV string so EF cannot
+        // translate List<string> predicates; we stream rows in FetchDate-desc
+        // order and stop once we have enough matches or hit this cap.
+        private const int MaxGenreScanRows = 20_000;
+
+        // Cache key + TTL for the distinct-genre aggregation. The Latest table
+        // only changes on provider fetches, so a short TTL is fine and saves us
+        // from scanning the whole table on every page load of the browse UI.
+        private const string LatestGenresCacheKey = "series.latest.genres";
+        private static readonly TimeSpan LatestGenresCacheTtl = TimeSpan.FromMinutes(5);
+
+        public SeriesQueryService(AppDbContext db, SettingsService settings, ProviderCacheService providerCache, IMemoryCache cache, ILogger<SeriesQueryService> logger)
         {
-            _db = db;          
+            _db = db;
             _settings = settings;
             _providerCache = providerCache;
+            _cache = cache;
             _logger = logger;
         }
         
@@ -87,12 +102,13 @@ namespace KaizokuBackend.Services.Series
         /// </summary>
         /// <param name="start">Starting index for pagination</param>
         /// <param name="count">Number of items to return</param>
-        /// <param name="sourceid">Optional source ID filter</param>
-        /// <param name="keyword">Optional keyword filter</param>
+        /// <param name="mihonProviderId">Optional source (provider) ID filter</param>
+        /// <param name="keyword">Optional title keyword filter (LIKE %keyword%)</param>
+        /// <param name="genres">Optional list of tags. A row must carry ALL of them (AND semantics)</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>List of latest series information</returns>
         public async Task<List<LatestSeriesDto>> GetLatestAsync(int start, int count, string? mihonProviderId = null,
-            string? keyword = null, CancellationToken token = default)
+            string? keyword = null, IReadOnlyList<string>? genres = null, CancellationToken token = default)
         {
             IQueryable<LatestSerieEntity> series = _db.LatestSeries;
             if (!string.IsNullOrEmpty(mihonProviderId))
@@ -120,11 +136,115 @@ namespace KaizokuBackend.Services.Series
                 series = series.Where(a => EF.Functions.Like(a.Title, $"%{keyword}%"));
 
             series = series.OrderByDescending(a => a.FetchDate);
-            if (start > 0)
-                series = series.Skip(start);
 
-            return (await series.Take(count).ToListAsync(token).ConfigureAwait(false))
-                .Select(a => a.ToSeriesInfo()).ToList();
+            // Normalize incoming genre filter. Empty list / null means "no filter".
+            List<string>? normalizedGenres = null;
+            if (genres != null && genres.Count > 0)
+            {
+                normalizedGenres = genres
+                    .Where(g => !string.IsNullOrWhiteSpace(g))
+                    .Select(g => g.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (normalizedGenres.Count == 0) normalizedGenres = null;
+            }
+
+            if (normalizedGenres == null)
+            {
+                if (start > 0)
+                    series = series.Skip(start);
+
+                return (await series.Take(count).ToListAsync(token).ConfigureAwait(false))
+                    .Select(a => a.ToSeriesInfo()).ToList();
+            }
+
+            // Genre filtering — Genre is stored as a value-converted CSV column
+            // (List<string> ↔ string), so EF cannot translate a Contains/All
+            // predicate against it. We stream rows in FetchDate-desc order,
+            // filter client-side, and stop as soon as we've produced enough
+            // matches or hit MaxGenreScanRows. AND semantics: a row must
+            // carry every selected tag to match.
+            var taken = new List<LatestSerieEntity>(count);
+            var rangeStart = Math.Max(0, start);
+            int matched = 0;
+            int scanned = 0;
+
+            await foreach (var row in series.AsAsyncEnumerable().WithCancellation(token))
+            {
+                scanned++;
+                if (scanned > MaxGenreScanRows) break;
+
+                if (row.Genre == null || row.Genre.Count == 0) continue;
+
+                var rowSet = new HashSet<string>(row.Genre.Count, StringComparer.OrdinalIgnoreCase);
+                foreach (var g in row.Genre)
+                {
+                    var trimmed = g?.Trim();
+                    if (!string.IsNullOrEmpty(trimmed)) rowSet.Add(trimmed);
+                }
+
+                bool hasAll = true;
+                foreach (var want in normalizedGenres)
+                {
+                    if (!rowSet.Contains(want)) { hasAll = false; break; }
+                }
+                if (!hasAll) continue;
+
+                if (matched < rangeStart) { matched++; continue; }
+
+                taken.Add(row);
+                matched++;
+                if (taken.Count >= count) break;
+            }
+
+            return taken.Select(a => a.ToSeriesInfo()).ToList();
+        }
+
+        /// <summary>
+        /// Returns the distinct set of genres/tags present in the cached "Latest"
+        /// cloud catalogue (filtered by the user's preferred languages), along
+        /// with the count of titles carrying each tag. Used to populate the tag
+        /// filter on the browse screen.
+        /// </summary>
+        public async Task<List<LatestGenreDto>> GetLatestGenresAsync(CancellationToken token = default)
+        {
+            if (_cache.TryGetValue(LatestGenresCacheKey, out List<LatestGenreDto>? cached) && cached != null)
+                return cached;
+
+            List<string> prefs = (await _settings.GetSettingsAsync(token).ConfigureAwait(false))
+                .PreferredLanguages?.ToList() ?? new List<string>();
+            if (prefs.Count == 0) prefs.Add("en");
+
+            // Project the Genre column only so we don't materialize the whole
+            // row. EF still applies the value converter, giving us a List<string>
+            // per row to fold into a frequency map.
+            List<List<string>> genreLists = await _db.LatestSeries.AsNoTracking()
+                .Where(a => a.Language == null || a.Language == "" || a.Language == "all" || prefs.Contains(a.Language))
+                .Select(a => a.Genre)
+                .ToListAsync(token).ConfigureAwait(false);
+
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var glist in genreLists)
+            {
+                if (glist == null) continue;
+                foreach (var raw in glist)
+                {
+                    var name = raw?.Trim();
+                    if (string.IsNullOrEmpty(name)) continue;
+                    counts.TryGetValue(name, out int c);
+                    counts[name] = c + 1;
+                }
+            }
+
+            // Sort by popularity, then alphabetical for stability.
+            var result = counts
+                .Select(kv => new LatestGenreDto { Name = kv.Key, Count = kv.Value })
+                .OrderByDescending(g => g.Count)
+                .ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            _cache.Set(LatestGenresCacheKey, result, LatestGenresCacheTtl);
+            return result;
         }
     }
 }

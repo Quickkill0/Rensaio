@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api/client';
-import { type FullSeries, type SeriesInfo, type SeriesExtendedInfo, type ProviderMatch, type AugmentedResponse, type LatestSeriesInfo, type SearchSource, type SeriesIntegrityResult } from '@/lib/api/types';
+import { type FullSeries, type SeriesInfo, type SeriesExtendedInfo, type ProviderMatch, type AugmentedResponse, type LatestSeriesInfo, type LatestGenre, type SearchSource, type SeriesIntegrityResult } from '@/lib/api/types';
 
 export const seriesService = {
   /**
@@ -59,22 +59,38 @@ export const seriesService = {
    * @param count Number of items to return
    * @param sourceId Optional source ID filter
    * @param keyword Optional keyword filter
+   * @param genres Optional list of tags (AND semantics — every tag must be present on the title)
    */
-  async getLatest(start: number, count: number, sourceId?: string, keyword?: string): Promise<LatestSeriesInfo[]> {
+  async getLatest(start: number, count: number, sourceId?: string, keyword?: string, genres?: string[]): Promise<LatestSeriesInfo[]> {
     const params = new URLSearchParams({
       start: start.toString(),
       count: count.toString(),
     });
-    
+
     if (sourceId) {
       params.append('sourceId', sourceId);
     }
-    
+
     if (keyword) {
       params.append('keyword', keyword);
     }
-    
+
+    if (genres && genres.length > 0) {
+      for (const g of genres) {
+        const trimmed = g.trim();
+        if (trimmed.length > 0) params.append('genre', trimmed);
+      }
+    }
+
     return apiClient.get<LatestSeriesInfo[]>(`/api/series/latest?${params.toString()}`);
+  },
+
+  /**
+   * Get the distinct set of tags/genres available in the cached "Latest"
+   * cloud catalogue, with occurrence counts (sorted most-used first).
+   */
+  async getLatestGenres(): Promise<LatestGenre[]> {
+    return apiClient.get<LatestGenre[]>('/api/series/latest/genres');
   },
 
   /**

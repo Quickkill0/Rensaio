@@ -168,11 +168,17 @@ namespace KaizokuBackend.Controllers
         [Authorize(Policy = "RequirePermission:CanViewLibrary")]
         [ProducesResponseType(typeof(List<LatestSeriesDto>), 200)]
         [ProducesResponseType(500)]
-        public async Task<ActionResult<List<LatestSeriesDto>>> GetLatestAsync([FromQuery] int start, [FromQuery] int count, [FromQuery] string? sourceId = null, [FromQuery] string? keyword = null, CancellationToken token = default)
+        public async Task<ActionResult<List<LatestSeriesDto>>> GetLatestAsync(
+            [FromQuery] int start,
+            [FromQuery] int count,
+            [FromQuery] string? sourceId = null,
+            [FromQuery] string? keyword = null,
+            [FromQuery(Name = "genre")] string[]? genre = null,
+            CancellationToken token = default)
         {
             try
             {
-                var result = await _queryService.GetLatestAsync(start, count, sourceId, keyword, token).ConfigureAwait(false);
+                var result = await _queryService.GetLatestAsync(start, count, sourceId, keyword, genre, token).ConfigureAwait(false);
                 await _thumb.PopulateThumbsAsync(result, "/api/image/", token).ConfigureAwait(false);
                 return Ok(result);
             }
@@ -180,6 +186,29 @@ namespace KaizokuBackend.Controllers
             {
                 _logger.LogError(ex, "Error getting latest cloud library: {Message}", ex.Message);
                 return StatusCode(500, $"Error getting latest cloud library.");
+            }
+        }
+
+        /// <summary>
+        /// Returns the distinct tags/genres present in the cached "Latest" cloud
+        /// catalogue along with their occurrence counts. Used to populate the
+        /// tag filter on the browse screen.
+        /// </summary>
+        [HttpGet("latest/genres")]
+        [Authorize(Policy = "RequirePermission:CanViewLibrary")]
+        [ProducesResponseType(typeof(List<LatestGenreDto>), 200)]
+        [ProducesResponseType(500)]
+        public async Task<ActionResult<List<LatestGenreDto>>> GetLatestGenresAsync(CancellationToken token = default)
+        {
+            try
+            {
+                var result = await _queryService.GetLatestGenresAsync(token).ConfigureAwait(false);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting latest genres: {Message}", ex.Message);
+                return StatusCode(500, "Error getting latest genres.");
             }
         }
 

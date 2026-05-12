@@ -514,6 +514,11 @@ export interface DownloadCardInfo {
   thumbnailUrl?: string;
 }
 
+export interface LatestGenre {
+  name: string;
+  count: number;
+}
+
 export interface LatestSeriesInfo {
   mihonId: string;
   mihonProviderId?: string;
