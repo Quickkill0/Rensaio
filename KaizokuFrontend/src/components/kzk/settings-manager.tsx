@@ -1233,6 +1233,38 @@ export function SettingsManager({
           );
         })}
       </div>
+
+      {/*
+        Sticky bottom save bar.
+        Renders only when the caller hides the header but still wants the
+        internal save button (e.g. <GeneralTab/>). When showHeader is true
+        the inline header button above is used instead, so we don't render
+        two buttons. Callers that pass showSaveButton={false} (e.g. the
+        setup wizard, which manages saves itself via onSave) get nothing.
+        The settings page wrapper already reserves space via `pb-24`.
+      */}
+      {!showHeader && showSaveButton && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/80 backdrop-blur">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex justify-end">
+            <Button
+              onClick={handleSave}
+              disabled={updateSettingsMutation.isPending}
+            >
+              {updateSettingsMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Settings
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
