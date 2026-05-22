@@ -12,13 +12,19 @@ import { Download, Trash2, Search, Upload, Activity, CheckCircle2, XCircle, Load
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ReactCountryFlag from "react-country-flag";
 import { providerService } from "@/lib/api/services/providerService";
-import { type Provider, type ExtensionEntry, NsfwVisibility } from "@/lib/api/types";
+import { type Provider, NsfwVisibility } from "@/lib/api/types";
 import { getCountryCodeForLanguage } from "@/lib/utils/language-country-mapping";
 import { LazyImage } from "@/components/ui/lazy-image";
 import { ProviderSettingsButton } from "@/components/kzk/provider-settings-button";
 import { ProviderPreferencesRequester } from "@/components/kzk/provider-preferences-requester";
 import { useSettings } from "@/lib/api/hooks/useSettings";
-import { getApiConfig } from "@/lib/api/config";
+import {
+  formatThumbnailUrl,
+  getExtensionLanguages,
+  getPrimaryLanguage,
+  getExtensionVersion,
+  isExtensionNsfw,
+} from "@/components/kzk/sources/lib";
 
 interface ProviderCardProps {
   extension: Provider;
@@ -30,57 +36,6 @@ interface ProviderCardProps {
   isCompact?: boolean;
   showNsfwIndicator?: boolean;
 }
-const formatThumbnailUrl = (thumbnailUrl?: string): string => {
-  const config = getApiConfig();
-  if (!thumbnailUrl) {
-    return '/kaizoku.net.png';
-  }
-  // If it already starts with http, return as is
-  if (thumbnailUrl.startsWith('http')) {
-    return thumbnailUrl;
-  }
-  
-  // Otherwise, prefix with base URL and API path
-  return `${config.baseUrl}${thumbnailUrl}`;
-};
-const getExtensionEntries = (extension: Provider): ExtensionEntry[] =>
-  extension.onlineRepositories.flatMap((repo) => repo.entries);
-
-const getPrimaryEntry = (extension: Provider): ExtensionEntry | undefined => {
-  const allEntries = getExtensionEntries(extension);
-  if (allEntries.length === 0) return undefined;
-
-  if (extension.isInstaled) {
-    const localRepo = extension.onlineRepositories.find((repo) =>
-      repo.entries.some((entry) => entry.isLocal)
-    );
-    if (localRepo) {
-      const index = Math.min(
-        Math.max(extension.activeEntry ?? 0, 0),
-        localRepo.entries.length - 1
-      );
-      return localRepo.entries[index] ?? localRepo.entries[0];
-    }
-  }
-
-  return allEntries[0];
-};
-
-const getExtensionLanguages = (extension: Provider): string[] => {
-  const langs = getExtensionEntries(extension)
-    .flatMap((entry) => entry.sources.map((source) => source.lang))
-    .filter(Boolean);
-  return Array.from(new Set(langs));
-};
-
-const getPrimaryLanguage = (extension: Provider): string =>
-  getExtensionLanguages(extension)[0] ?? "all";
-
-const getExtensionVersion = (extension: Provider): string =>
-  getPrimaryEntry(extension)?.version ?? "";
-
-const isExtensionNsfw = (extension: Provider): boolean =>
-  getExtensionEntries(extension).some((entry) => entry.nsfw);
 
 function ProviderCard({
   extension,
