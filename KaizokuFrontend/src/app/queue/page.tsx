@@ -41,6 +41,7 @@ import {
   QueueStatus,
 } from '@/lib/api/types';
 import { JobsPanel } from '@/components/kzk/jobs/jobs-panel';
+import { RibbonSlot } from '@/components/kzk/layout/ribbon';
 import { QueueListView } from '@/components/kzk/queue/queue-list-view';
 import {
   ActiveRow,
@@ -96,38 +97,6 @@ const ConfirmDialog = memo(
   ),
 );
 ConfirmDialog.displayName = 'ConfirmDialog';
-
-// ---------------------------------------------------------------------------
-// Metrics Summary Bar
-// ---------------------------------------------------------------------------
-
-const MetricsSummary = memo(() => {
-  const { data: metrics } = useDownloadsMetrics();
-  const active = metrics?.downloads ?? 0;
-  const queued = metrics?.queued ?? 0;
-  const failed = metrics?.failed ?? 0;
-
-  return (
-    <div className="flex flex-wrap justify-center gap-2 mb-3">
-      <div className="flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm shadow-sm">
-        <Activity className="h-4 w-4 text-blue-500" />
-        <span className="font-medium text-blue-500">{active}</span>
-        <span className="text-muted-foreground hidden sm:inline">active</span>
-      </div>
-      <div className="flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm shadow-sm">
-        <Clock className="h-4 w-4 text-amber-500" />
-        <span className="font-medium text-amber-500">{queued}</span>
-        <span className="text-muted-foreground hidden sm:inline">queued</span>
-      </div>
-      <div className="flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm shadow-sm">
-        <AlertTriangle className="h-4 w-4 text-red-500" />
-        <span className="font-medium text-red-500">{failed}</span>
-        <span className="text-muted-foreground hidden sm:inline">failed</span>
-      </div>
-    </div>
-  );
-});
-MetricsSummary.displayName = 'MetricsSummary';
 
 // ---------------------------------------------------------------------------
 // Tab Header Bar
@@ -392,39 +361,46 @@ export default function Queue() {
   const { data: metrics } = useDownloadsMetrics();
   const queuedCount = metrics?.queued ?? 0;
   const failedCount = metrics?.failed ?? 0;
+  const [tab, setTab] = useState('active');
 
   return (
-    <div className="flex flex-col p-2 gap-3">
-      <MetricsSummary />
-      <Tabs defaultValue="active" className="w-full">
-        <div className="flex justify-center">
-        <TabsList className="mb-1 flex-wrap h-auto gap-1 w-full sm:w-auto">
-          <TabsTrigger value="active" className="gap-1.5 text-xs sm:text-sm">
-            <Activity className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Active</span>
-            {downloadCount > 0 && <Badge variant="secondary" className="text-xs px-1 py-0 h-4 min-w-[18px]">{downloadCount}</Badge>}
-          </TabsTrigger>
-          <TabsTrigger value="queued" className="gap-1.5 text-xs sm:text-sm">
-            <Clock className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Queued</span>
-            {queuedCount > 0 && <Badge variant="secondary" className="text-xs px-1 py-0 h-4 min-w-[18px]">{queuedCount}</Badge>}
-          </TabsTrigger>
-          <TabsTrigger value="completed" className="gap-1.5 text-xs sm:text-sm">
-            <CheckCircle className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Completed</span>
-          </TabsTrigger>
-          <TabsTrigger value="errors" className="gap-1.5 text-xs sm:text-sm">
-            <AlertTriangle className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Errors</span>
-            {failedCount > 0 && <Badge variant="destructive" className="text-xs px-1 py-0 h-4 min-w-[18px]">{failedCount}</Badge>}
-          </TabsTrigger>
-          <TabsTrigger value="jobs" className="gap-1.5 text-xs sm:text-sm">
-            <Layers className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Jobs</span>
-          </TabsTrigger>
-        </TabsList>
+    // Controlled Tabs root wraps both the RibbonSlot (which portals TabsList
+    // into the command bar) and the page body (which holds TabsContent). The
+    // portal preserves the React tree, so Radix Tabs context propagates to
+    // TabsList even though it's rendered up in the bar.
+    <Tabs value={tab} onValueChange={setTab} className="w-full">
+      <RibbonSlot>
+        <div className="flex w-full justify-center">
+          <TabsList className="h-9 gap-1">
+            <TabsTrigger value="active" className="gap-1.5 text-xs sm:text-sm">
+              <Activity className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Active</span>
+              {downloadCount > 0 && <Badge variant="secondary" className="text-xs px-1 py-0 h-4 min-w-[18px]">{downloadCount}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="queued" className="gap-1.5 text-xs sm:text-sm">
+              <Clock className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Queued</span>
+              {queuedCount > 0 && <Badge variant="secondary" className="text-xs px-1 py-0 h-4 min-w-[18px]">{queuedCount}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="completed" className="gap-1.5 text-xs sm:text-sm">
+              <CheckCircle className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Completed</span>
+            </TabsTrigger>
+            <TabsTrigger value="errors" className="gap-1.5 text-xs sm:text-sm">
+              <AlertTriangle className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Errors</span>
+              {failedCount > 0 && <Badge variant="destructive" className="text-xs px-1 py-0 h-4 min-w-[18px]">{failedCount}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="jobs" className="gap-1.5 text-xs sm:text-sm">
+              <Layers className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Jobs</span>
+            </TabsTrigger>
+          </TabsList>
         </div>
+      </RibbonSlot>
+
+      <div className="flex flex-col p-2 gap-3">
         <TabsContent value="active"><ActiveTabPanel /></TabsContent>
         <TabsContent value="queued"><QueuedTabPanel /></TabsContent>
         <TabsContent value="completed"><CompletedTabPanel /></TabsContent>
         <TabsContent value="errors"><ErrorsTabPanel /></TabsContent>
         <TabsContent value="jobs"><JobsPanel /></TabsContent>
-      </Tabs>
-    </div>
+      </div>
+    </Tabs>
   );
 }

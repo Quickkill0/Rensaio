@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { seriesService } from '@/lib/api/services/seriesService';
-import { type FullSeries, type SeriesInfo, type SeriesExtendedInfo, type ProviderMatch, type AugmentedResponse, type LatestSeriesInfo, type LatestGenre, type SearchSource, type SeriesIntegrityResult } from '@/lib/api/types';
+import { type FullSeries, type SeriesInfo, type SeriesExtendedInfo, type ProviderMatch, type AugmentedResponse, type LatestSeriesInfo, type LatestGenre, type SearchSource, type SeriesIntegrityResult, type ChapterDto, ChapterDownloadStatus } from '@/lib/api/types';
 
 /**
  * Hook to get available search sources (for search and filtering)
@@ -213,7 +213,7 @@ export const useRenameSeriesFiles = () => {
  */
 export const useUpdateAllSeries = () => {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: () => seriesService.updateAllSeries(),
     onSuccess: () => {
@@ -222,3 +222,49 @@ export const useUpdateAllSeries = () => {
     },
   });
 };
+
+/**
+ * Hook to fetch all chapters for a series with their download status.
+ * Automatically polls every 10s while any chapter is Queued.
+ */
+export function useChaptersForSeries(seriesId: string | undefined, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['series', seriesId, 'chapters'],
+    queryFn: () => seriesService.getChaptersForSeries(seriesId!),
+    enabled: !!seriesId && (options?.enabled ?? true),
+    refetchInterval: (q) => {
+      const data = q.state.data as ChapterDto[] | undefined;
+      const hasQueued = data?.some(c => c.status === ChapterDownloadStatus.Queued) ?? false;
+      return hasQueued ? 10_000 : false;
+    },
+    staleTime: 5_000,
+  });
+}
+
+/**
+ * Hook to enqueue missing chapter downloads. Pass chapterNumbers to target
+ * specific chapters, or omit to enqueue all missing chapters.
+ */
+export function useDownloadMissingChapters(seriesId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (chapterNumbers?: number[]) => seriesService.triggerChapterDownloads(seriesId, chapterNumbers),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['series', seriesId, 'chapters'] });
+      void queryClient.invalidateQueries({ queryKey: ['downloads', 'series', seriesId] });
+    },
+  });
+}
+
+/**
+ * Hook to force a high-priority GetChapters refresh per active provider.
+ */
+export function useRefreshChapters(seriesId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => seriesService.refreshChapters(seriesId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['series', seriesId, 'chapters'] });
+    },
+  });
+}

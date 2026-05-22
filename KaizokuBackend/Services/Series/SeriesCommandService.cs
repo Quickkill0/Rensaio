@@ -8,9 +8,9 @@ using KaizokuBackend.Services.Bridge;
 using KaizokuBackend.Services.Downloads;
 using KaizokuBackend.Services.Helpers;
 using KaizokuBackend.Services.Images;
+using KaizokuBackend.Services.Jobs;
 using KaizokuBackend.Services.Jobs.Models;
 using KaizokuBackend.Services.Settings;
-using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 using Mihon.ExtensionsBridge.Models.Abstractions;
 using Mihon.ExtensionsBridge.Models.Extensions;
@@ -35,10 +35,12 @@ namespace KaizokuBackend.Services.Series
         private readonly DownloadCommandService _downloadCommand;
         private readonly MihonBridgeService _mihon;
         private readonly ThumbCacheService _cache;
+        private readonly JobManagementService _jobManagement;
 
         public SeriesCommandService(AppDbContext db, SettingsService settings, ArchiveHelperService archiveHelper,
             SeriesProviderService providerService, ILogger<SeriesCommandService> logger,
-            DownloadCommandService downloadCommand, MihonBridgeService mihon, ThumbCacheService cache)
+            DownloadCommandService downloadCommand, MihonBridgeService mihon, ThumbCacheService cache,
+            JobManagementService jobManagement)
         {
             _db = db;
             _settings = settings;
@@ -48,6 +50,7 @@ namespace KaizokuBackend.Services.Series
             _downloadCommand = downloadCommand;
             _mihon = mihon;
             _cache = cache;
+            _jobManagement = jobManagement;
         }
 
         /// <summary>
@@ -440,7 +443,145 @@ namespace KaizokuBackend.Services.Series
             return await _downloadCommand.QueueChapterDownloadsAsync(serie, chaps, token).ConfigureAwait(false);
 
         }
-       // Private helper methods
+        /// <summary>
+        /// Queues downloads for missing chapters of a series. When chapterNumbers is
+        /// null or empty all missing chapters (no Filename) across active providers are
+        /// enqueued. Otherwise only chapters matching the supplied numbers are enqueued.
+        /// Returns the count of chapter downloads enqueued.
+        /// </summary>
+        public async Task<int> QueueMissingChaptersAsync(Guid id, decimal[]? chapterNumbers, CancellationToken token = default)
+        {
+            // Tracking-enabled query (no AsNoTracking) because QueueChapterDownloadsAsync
+            // mutates Chapter.ShouldDownload via GenerateDownloadsFromChapterData.
+            Models.Database.SeriesEntity? series = await _db.Series
+                .Include(s => s.Sources)
+                .FirstOrDefaultAsync(s => s.Id == id, token)
+                .ConfigureAwait(false);
+
+            if (series == null)
+                throw new KeyNotFoundException($"Series with ID {id} not found");
+
+            List<SeriesProviderEntity> activeProviders = series.Sources
+                .Where(sp => !sp.IsDisabled && !sp.IsUninstalled)
+                .ToList();
+
+            bool filterByNumber = chapterNumbers != null && chapterNumbers.Length > 0;
+            HashSet<decimal>? wantedSet = filterByNumber
+                ? new HashSet<decimal>(chapterNumbers!)
+                : null;
+
+            int totalEnqueued = 0;
+
+            // Group chapters by number and pick best provider per chapter.
+            // Title provider is preferred; fall back to lowest ProviderIndex.
+            var allPairs = activeProviders
+                .SelectMany(sp => sp.Chapters
+                    .Where(c => !c.IsDeleted)
+                    .Select(c => (Provider: sp, Chapter: c)))
+                .ToList();
+
+            var groups = allPairs
+                .GroupBy(pair =>
+                    pair.Chapter.Number.HasValue
+                        ? (object)Math.Round(pair.Chapter.Number.Value, 2)
+                        : (object)(pair.Provider.Id, pair.Chapter.Name))
+                .ToList();
+
+            foreach (var group in groups)
+            {
+                var pairs = group.ToList();
+                decimal? chapterNumber = pairs[0].Chapter.Number;
+
+                // Apply number filter
+                if (filterByNumber)
+                {
+                    if (!chapterNumber.HasValue || !wantedSet!.Contains(Math.Round(chapterNumber.Value, 2)))
+                        continue;
+                }
+                else
+                {
+                    // Only enqueue missing chapters
+                    if (pairs.Any(p => !string.IsNullOrEmpty(p.Chapter.Filename)))
+                        continue;
+                }
+
+                // Pick the best provider for this chapter:
+                // prefer the title provider, then lowest ProviderIndex.
+                var best = pairs
+                    .OrderByDescending(p => p.Provider.IsTitle ? 1 : 0)
+                    .ThenBy(p => p.Chapter.ProviderIndex)
+                    .First();
+
+                // Build a synthetic ParsedChapter so we can reuse GenerateDownloadsFromChapterData.
+                var parsed = new ParsedChapter
+                {
+                    Index = best.Chapter.ProviderIndex,
+                    ParsedNumber = best.Chapter.Number ?? 0m,
+                    ParsedName = best.Chapter.Name,
+                    Name = best.Chapter.Name ?? string.Empty,
+                    RealUrl = best.Chapter.Url ?? string.Empty,
+                    Scanlator = best.Provider.Scanlator ?? string.Empty,
+                    DateUpload = best.Chapter.ProviderUploadDate.HasValue
+                        ? new DateTimeOffset(best.Chapter.ProviderUploadDate.Value)
+                        : DateTimeOffset.UtcNow,
+                };
+
+                List<ChapterDownload> chaps = series.GenerateDownloadsFromChapterData(best.Provider, new List<ParsedChapter> { parsed });
+                if (chaps.Count > 0)
+                {
+                    await _downloadCommand.QueueChapterDownloadsAsync(best.Provider, chaps, token).ConfigureAwait(false);
+                    totalEnqueued += chaps.Count;
+                }
+            }
+
+            // Persist any ShouldDownload flag mutations made by GenerateDownloadsFromChapterData
+            // so the next chapters query (and the periodic GetChapters job) sees them as Queued.
+            await _db.SaveChangesAsync(token).ConfigureAwait(false);
+
+            _logger.LogInformation("QueueMissingChaptersAsync: enqueued {Count} chapters for series {Id}", totalEnqueued, id);
+            return totalEnqueued;
+        }
+
+        /// <summary>
+        /// Enqueues an immediate GetChapters job at high priority for each active provider
+        /// of the given series. Returns the count of jobs enqueued.
+        /// </summary>
+        public async Task<int> ForceRefreshChaptersAsync(Guid id, CancellationToken token = default)
+        {
+            Models.Database.SeriesEntity? series = await _db.Series
+                .Include(s => s.Sources)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == id, token)
+                .ConfigureAwait(false);
+
+            if (series == null)
+                throw new KeyNotFoundException($"Series with ID {id} not found");
+
+            List<SeriesProviderEntity> activeProviders = series.Sources
+                .Where(sp => !sp.IsDisabled && !sp.IsUninstalled)
+                .ToList();
+
+            int count = 0;
+            foreach (SeriesProviderEntity provider in activeProviders)
+            {
+                string groupKey = JobBusinessService.BuildProviderGroupKey(provider);
+                await _jobManagement.EnqueueJobAsync(
+                    JobType.GetChapters,
+                    provider.Id,
+                    Priority.High,
+                    provider.Id.ToString(),
+                    groupKey,
+                    series.Id.ToString(),
+                    "Default",
+                    token).ConfigureAwait(false);
+                count++;
+            }
+
+            _logger.LogInformation("ForceRefreshChaptersAsync: enqueued {Count} GetChapters jobs for series {Id}", count, id);
+            return count;
+        }
+
+        // Private helper methods
         private async Task<Models.Database.SeriesEntity?> FindExistingSeriesAsync(AugmentedResponseDto ProviderSeriesDetails,
             SettingsDto settings, Dictionary<string, Guid> paths, CancellationToken token)
         {

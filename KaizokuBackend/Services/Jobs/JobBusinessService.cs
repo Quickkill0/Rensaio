@@ -137,7 +137,7 @@ namespace KaizokuBackend.Services.Jobs
 
         #region Helper Methods
 
-        private static string BuildProviderGroupKey(SeriesProviderEntity provider)
+        public static string BuildProviderGroupKey(SeriesProviderEntity provider)
         {
             return $"{provider.Provider}|{provider.Language}|{provider.Scanlator ?? ""}";
         }

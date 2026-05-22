@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api/client';
-import { type FullSeries, type SeriesInfo, type SeriesExtendedInfo, type ProviderMatch, type AugmentedResponse, type LatestSeriesInfo, type LatestGenre, type SearchSource, type SeriesIntegrityResult } from '@/lib/api/types';
+import { type FullSeries, type SeriesInfo, type SeriesExtendedInfo, type ProviderMatch, type AugmentedResponse, type LatestSeriesInfo, type LatestGenre, type SearchSource, type SeriesIntegrityResult, type ChapterDto, type DownloadMissingResultDto, type RefreshChaptersResultDto } from '@/lib/api/types';
 
 export const seriesService = {
   /**
@@ -133,5 +133,28 @@ export const seriesService = {
    */
   async updateAllSeries(): Promise<void> {
     return apiClient.post<void>('/api/series/update-all', {});
+  },
+
+  /**
+   * Get all chapters for a series with their download status
+   */
+  async getChaptersForSeries(id: string): Promise<ChapterDto[]> {
+    return apiClient.get<ChapterDto[]>(`/api/series/${id}/chapters`);
+  },
+
+  /**
+   * Enqueue missing chapter downloads for a series.
+   * Omit chapterNumbers (or pass empty) to enqueue all missing chapters.
+   */
+  async triggerChapterDownloads(id: string, chapterNumbers?: number[]): Promise<DownloadMissingResultDto> {
+    const rounded = chapterNumbers?.map(n => Math.round(n * 100) / 100);
+    return apiClient.post<DownloadMissingResultDto>(`/api/series/${id}/chapters/download`, { chapterNumbers: rounded });
+  },
+
+  /**
+   * Force a high-priority GetChapters job per active provider for a series
+   */
+  async refreshChapters(id: string): Promise<RefreshChaptersResultDto> {
+    return apiClient.post<RefreshChaptersResultDto>(`/api/series/${id}/chapters/refresh`, {});
   },
 };

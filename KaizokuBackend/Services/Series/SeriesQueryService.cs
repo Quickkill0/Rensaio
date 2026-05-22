@@ -201,6 +201,94 @@ namespace KaizokuBackend.Services.Series
         }
 
         /// <summary>
+        /// Returns an aggregated chapter list for a series, grouping chapters across
+        /// all providers by chapter number and computing per-chapter download status.
+        /// </summary>
+        /// <param name="id">The series unique identifier.</param>
+        /// <param name="token">Cancellation token.</param>
+        /// <returns>Sorted list of ChapterDto, or null if the series is not found.</returns>
+        public async Task<List<ChapterDto>?> GetChaptersForSeriesAsync(Guid id, CancellationToken token = default)
+        {
+            Models.Database.SeriesEntity? series = await _db.Series
+                .Include(s => s.Sources)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == id, token)
+                .ConfigureAwait(false);
+
+            if (series == null)
+                return null;
+
+            // Each provider carries chapters as a JSON column — no extra Include needed.
+            // Group active (non-deleted) chapters by chapter number rounded to 2 decimals.
+            // Chapters with a null number are grouped individually by (providerId, name).
+
+            var result = new List<ChapterDto>();
+
+            // Collect all (provider, chapter) pairs
+            var allPairs = series.Sources
+                .SelectMany(sp => sp.Chapters
+                    .Where(c => !c.IsDeleted)
+                    .Select(c => (Provider: sp, Chapter: c)))
+                .ToList();
+
+            // Build grouping key: numbered chapters share a rounded key; null-number chapters
+            // are isolated so they don't collapse together.
+            var groups = allPairs
+                .GroupBy(pair =>
+                    pair.Chapter.Number.HasValue
+                        ? (object)Math.Round(pair.Chapter.Number.Value, 2)
+                        : (object)(pair.Provider.Id, pair.Chapter.Name))
+                .ToList();
+
+            foreach (var group in groups)
+            {
+                var pairs = group.ToList();
+
+                // Prefer the entry with a Filename (downloaded) when picking scalar fields.
+                var downloaded = pairs.FirstOrDefault(p => !string.IsNullOrEmpty(p.Chapter.Filename));
+                var representative = downloaded.Chapter != null ? downloaded.Chapter : pairs[0].Chapter;
+
+                // Status calculation (Failed deferred — no direct signal on Chapter model).
+                ChapterDownloadStatus status;
+                if (pairs.Any(p => !string.IsNullOrEmpty(p.Chapter.Filename)))
+                    status = ChapterDownloadStatus.Downloaded;
+                else if (pairs.Any(p => p.Chapter.ShouldDownload))
+                    status = ChapterDownloadStatus.Queued;
+                else
+                    status = ChapterDownloadStatus.Missing;
+
+                var dto = new ChapterDto
+                {
+                    Number = representative.Number,
+                    Name = representative.Name,
+                    PageCount = representative.PageCount,
+                    ProviderUploadDate = representative.ProviderUploadDate,
+                    DownloadDate = representative.DownloadDate,
+                    Filename = representative.Filename,
+                    Status = status,
+                    Providers = pairs.Select(p => new ChapterProviderDto
+                    {
+                        ProviderId = p.Provider.Id,
+                        Provider = p.Provider.Provider,
+                        Scanlator = p.Provider.Scanlator,
+                        Language = p.Provider.Language,
+                        Url = p.Chapter.Url,
+                        ProviderIndex = p.Chapter.ProviderIndex,
+                        IsDownloaded = !string.IsNullOrEmpty(p.Chapter.Filename)
+                    }).ToList()
+                };
+
+                result.Add(dto);
+            }
+
+            // Sort: numbered chapters ascending, null-number chapters at the end.
+            return result
+                .OrderBy(c => c.Number.HasValue ? 0 : 1)
+                .ThenBy(c => c.Number ?? decimal.MaxValue)
+                .ToList();
+        }
+
+        /// <summary>
         /// Returns the distinct set of genres/tags present in the cached "Latest"
         /// cloud catalogue (filtered by the user's preferred languages), along
         /// with the count of titles carrying each tag. Used to populate the tag

@@ -10,6 +10,7 @@ import {
   Info,
 } from 'lucide-react';
 import { useIsAdmin } from '@/hooks/use-permission';
+import { RibbonSlot } from '@/components/kzk/layout/ribbon';
 
 // Tab content components
 import { GeneralTab } from '@/components/kzk/settings/general-tab';
@@ -48,9 +49,12 @@ function SettingsContent() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* Top tab bar */}
-      <nav className="shrink-0 border-b bg-background/50">
-        <div className="flex items-center gap-1 px-4 overflow-x-auto scrollbar-hide max-w-4xl mx-auto w-full">
+      {/* Settings tab strip — portaled into the command bar's ribbon */}
+      <RibbonSlot>
+        <nav
+          aria-label="Settings sections"
+          className="flex w-full items-center justify-center gap-0.5"
+        >
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -58,22 +62,20 @@ function SettingsContent() {
               <button
                 key={tab.id}
                 onClick={() => setTab(tab.id)}
-                className={`relative flex items-center gap-2 px-3 py-3 text-sm font-medium whitespace-nowrap transition-colors ${
+                className={`relative inline-flex items-center gap-1.5 rounded-full h-8 px-3 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   isActive
-                    ? 'text-primary'
-                    : 'text-muted-foreground hover:text-foreground'
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
                 }`}
+                aria-current={isActive ? 'page' : undefined}
               >
                 <Icon className="h-4 w-4 shrink-0" />
                 <span>{tab.label}</span>
-                {isActive && (
-                  <div className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-primary" />
-                )}
               </button>
             );
           })}
-        </div>
-      </nav>
+        </nav>
+      </RibbonSlot>
 
       {/* Content panel */}
       <div className="flex-1 min-w-0 overflow-y-auto">

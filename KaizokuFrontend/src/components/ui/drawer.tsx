@@ -61,7 +61,12 @@ const DrawerOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DrawerPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-black/80", className)}
+    className={cn(
+      // Frosted dim — matches the command bar / dialog overlay so the
+      // mobile drawer feels cohesive with the rest of the chrome.
+      "fixed inset-0 z-50 bg-background/70 backdrop-blur-sm backdrop-saturate-150",
+      className,
+    )}
     // Block all touch events from reaching the page behind the overlay
     onTouchStart={(e) => e.stopPropagation()}
     onTouchMove={(e) => e.stopPropagation()}
@@ -79,7 +84,9 @@ const DrawerContent = React.forwardRef<
     <DrawerPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-[92dvh] flex-col rounded-t-[10px] border bg-background",
+        // Cohesive with the command-bar glass language: soft hairline border
+        // and deeper shadow for separation from the blurred overlay.
+        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-[92dvh] flex-col rounded-t-[12px] border border-border/60 bg-background shadow-2xl",
         "overscroll-contain touch-manipulation",
         className
       )}

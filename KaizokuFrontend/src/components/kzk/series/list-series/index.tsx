@@ -13,7 +13,7 @@ import { DynamicTags } from "@/components/kzk/series/add-series/steps/confirm-se
 import { Badge } from "@/components/ui/badge";
 import ReactCountryFlag from "react-country-flag";
 import { getCountryCodeForLanguage } from "@/lib/utils/language-country-mapping";
-import { Database, ExternalLink } from "lucide-react";
+import { AlertTriangle, Database, ExternalLink, PauseCircle } from "lucide-react";
 import { getStatusDisplay } from "@/lib/utils/series-status";
 import { formatThumbnailUrl } from "@/lib/utils/thumbnail";
 // Color array for the last change ring (31 colors from green to blue)
@@ -199,15 +199,48 @@ export function ListSeries({ filterFn, sortFn, cardWidth = "w-40", cardWidthOpti
                   }
                 }}
               />
-                                          {/* Provider Badge - Top Left */}
-                            <div className="absolute top-1 left-1 text-white text-xs font-semibold max-w-[70%] rounded shadow">
-                              <Badge 
-                                variant="secondary" 
-                                className="bg-black/70"
-                              >
-                                {series.lastChangeProvider.provider}
-                              </Badge>
-                            </div>
+
+              {/* Status bar — 2px strip across the top edge, color-coded by
+                  series.status. Lets the user spot ongoing / completed /
+                  hiatus / disabled at a glance without opening the card. */}
+              <div
+                className={`pointer-events-none absolute inset-x-0 top-0 z-10 h-0.5 ${getStatusDisplay(series.status).color}`}
+                aria-hidden
+              />
+
+              {/* Provider Badge - Top Left */}
+              <div className="absolute top-1 left-1 text-white text-xs font-semibold max-w-[70%] rounded shadow z-10">
+                <Badge
+                  variant="secondary"
+                  className="bg-black/70"
+                >
+                  {series.lastChangeProvider.provider}
+                </Badge>
+              </div>
+
+              {/* Attention dot — bottom-left of cover when this series has
+                  unassigned providers that need a manual match. Matches the
+                  "Unassigned" status-filter language. */}
+              {series.hasUnknown && (
+                <div
+                  className="absolute bottom-7 left-1 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500/95 text-amber-50 shadow ring-2 ring-background"
+                  title="Has unassigned providers"
+                >
+                  <AlertTriangle className="h-2.5 w-2.5" />
+                </div>
+              )}
+
+              {/* Paused indicator — bottom-left, just above the title strip,
+                  when downloads for this series are paused. */}
+              {series.pausedDownloads && !series.hasUnknown && (
+                <div
+                  className="absolute bottom-7 left-1 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-muted/95 text-muted-foreground shadow ring-2 ring-background"
+                  title="Downloads paused"
+                >
+                  <PauseCircle className="h-2.5 w-2.5" />
+                </div>
+              )}
+
               <div className={`absolute bottom-0 left-0 w-full bg-black/60 text-white font-semibold px-2 py-1 rounded-b-md flex items-center justify-center ${textSize}`}>
                 {series.title}
               </div>

@@ -77,10 +77,6 @@
     --radius-md: 8px;
     --radius-lg: 12px;
     --radius-xl: 16px;
-
-    /* Sidebar widths */
-    --sidebar-collapsed-w: 64px;
-    --sidebar-expanded-w: 260px;
   }
 }
 

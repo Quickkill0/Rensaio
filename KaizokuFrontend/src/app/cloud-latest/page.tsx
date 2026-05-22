@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from "react-dom";
 import { getResponsiveCardDefault } from "@/lib/utils/responsive-card-default";
 import { Sparkles, Globe, Tag, X, Check, Search } from "lucide-react";
 import {
@@ -16,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import ReactCountryFlag from "react-country-flag";
 import { getCountryCodeForLanguage } from "@/lib/utils/language-country-mapping";
 import { useSearch } from "@/contexts/search-context";
+import { RibbonSlot } from "@/components/kzk/layout/ribbon";
 import { useSearchSources, useLatest, useLatestGenres } from "@/lib/api/hooks/useSeries";
 import { seriesService } from "@/lib/api/services/seriesService";
 import { useQueryClient } from '@tanstack/react-query';
@@ -25,6 +27,7 @@ import { useDebounce } from "@/lib/hooks/useDebounce";
 
 const ITEMS_PER_PAGE = 40; // Increased to ensure screen fill
 const MAX_VISIBLE_GENRES = 200;
+const TAG_POPOVER_MAX_WIDTH_PX = 352; // matches w-[min(22rem,calc(100vw-2rem))] on the popover root
 
 // Calculate optimal items per page based on card width and screen size
 function calculateItemsPerPage(cardWidth: string): number {
@@ -116,6 +119,7 @@ export default function CloudLatestPage() {
   const tagPopoverRef = useRef<HTMLDivElement | null>(null);
   const tagButtonRef = useRef<HTMLButtonElement | null>(null);
   const tagSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const [tagPopoverPos, setTagPopoverPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // Track user activity for periodic refresh logic
   const lastActivityRef = useRef<number>(Date.now());
@@ -402,6 +406,47 @@ export default function CloudLatestPage() {
     };
   }, [tagPopoverOpen]);
 
+  // Compute & track the popover's fixed position relative to the trigger
+  // button. Recomputes on open, resize, and scroll so the popover stays
+  // anchored even when the user scrolls the page.
+  useEffect(() => {
+    if (!tagPopoverOpen) {
+      setTagPopoverPos(null);
+      return;
+    }
+
+    let rafId: number | null = null;
+
+    const compute = () => {
+      rafId = null;
+      const btn = tagButtonRef.current;
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const popoverWidth = Math.min(TAG_POPOVER_MAX_WIDTH_PX, window.innerWidth - 32);
+      const maxLeft = window.innerWidth - popoverWidth - 16;
+      const left = Math.max(16, Math.min(rect.left, maxLeft));
+      setTagPopoverPos({
+        top: rect.bottom + 8,
+        left,
+        width: popoverWidth,
+      });
+    };
+
+    const schedule = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(compute);
+    };
+
+    compute(); // immediate on open
+    window.addEventListener("resize", schedule);
+    window.addEventListener("scroll", schedule, true);
+    return () => {
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", schedule, true);
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+    };
+  }, [tagPopoverOpen]);
+
   const tagButtonLabel = useMemo(() => {
     if (selectedGenres.length === 0) return "Tags";
     if (selectedGenres.length === 1) return `Tag: ${selectedGenres[0]!}`;
@@ -410,13 +455,16 @@ export default function CloudLatestPage() {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="w-48">
+      {/* Browse contextual ribbon — portaled into the command bar */}
+      <RibbonSlot>
+        <div className="flex w-full items-center gap-2">
+          {/* Source picker */}
+          <div className="w-40 sm:w-48 shrink-0">
             <Select
               value={selectedSourceId ?? "__ALL__"}
               onValueChange={(value) => setSelectedSourceId(value === "__ALL__" ? null : value)}
             >
-              <SelectTrigger className="w-full !pr-2 caret-transparent">
+              <SelectTrigger className="w-full !pr-2 caret-transparent h-8 text-xs sm:text-sm">
                 <SelectValue placeholder="All Sources" />
               </SelectTrigger>
               <SelectContent>
@@ -450,129 +498,137 @@ export default function CloudLatestPage() {
             </Select>
           </div>
 
-        {/* Tag filter — custom popover (no shadcn Popover/Command primitives in repo). */}
-        <div className="relative">
-          <Button
-            ref={tagButtonRef}
-            type="button"
-            variant="outline"
-            size="default"
-            className="h-9 justify-between gap-2 bg-card font-normal"
-            aria-haspopup="dialog"
-            aria-expanded={tagPopoverOpen}
-            onClick={() => setTagPopoverOpen((o) => !o)}
-          >
-            <Tag className="h-4 w-4 opacity-70" />
-            <span className="truncate max-w-[14rem]">{tagButtonLabel}</span>
-            {selectedGenres.length > 0 && (
-              <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold leading-none text-primary-foreground">
-                {selectedGenres.length}
-              </span>
-            )}
-          </Button>
-
-          {tagPopoverOpen && (
-            <div
-              ref={tagPopoverRef}
-              role="dialog"
-              aria-label="Filter by tags"
-              className="absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-lg"
+          {/* Tag popover — anchored to the trigger button; opens below the ribbon. */}
+          <div className="relative shrink-0">
+            <Button
+              ref={tagButtonRef}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 justify-between gap-2 bg-card font-normal text-xs sm:text-sm"
+              aria-haspopup="dialog"
+              aria-expanded={tagPopoverOpen}
+              onClick={() => setTagPopoverOpen((o) => !o)}
             >
-              <div className="flex items-center gap-2 border-b border-border/60 px-2 py-2">
-                <Search className="h-4 w-4 shrink-0 opacity-60" />
-                <Input
-                  ref={tagSearchInputRef}
-                  value={tagSearch}
-                  onChange={(e) => setTagSearch(e.target.value)}
-                  placeholder="Search tags…"
-                  className="h-8 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-                />
-              </div>
-
-              <div className="max-h-72 overflow-y-auto py-1">
-                {isGenresLoading ? (
-                  <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    Loading tags…
-                  </div>
-                ) : filteredGenres.length === 0 ? (
-                  <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    {(genresData?.length ?? 0) === 0
-                      ? "No tags available yet"
-                      : "No tags match your search"}
-                  </div>
-                ) : (
-                  <ul className="flex flex-col">
-                    {filteredGenres.map((g) => {
-                      const isChecked = selectedGenres.includes(g.name);
-                      return (
-                        <li key={g.name}>
-                          <button
-                            type="button"
-                            role="checkbox"
-                            aria-checked={isChecked}
-                            onClick={() => toggleGenre(g.name)}
-                            className="group flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
-                          >
-                            <span
-                              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${
-                                isChecked
-                                  ? "border-primary bg-primary text-primary-foreground"
-                                  : "border-input bg-transparent"
-                              }`}
-                            >
-                              {isChecked && <Check className="h-3 w-3" />}
-                            </span>
-                            <span className="flex-1 truncate">{g.name}</span>
-                            <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
-                              {g.count}
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-
+              <Tag className="h-4 w-4 opacity-70" />
+              <span className="truncate max-w-[10rem]">{tagButtonLabel}</span>
               {selectedGenres.length > 0 && (
-                <div className="flex items-center justify-between border-t border-border/60 px-2 py-2">
-                  <span className="text-xs text-muted-foreground">
-                    {selectedGenres.length} selected
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={clearGenres}
-                  >
-                    Clear all
-                  </Button>
-                </div>
+                <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold leading-none text-primary-foreground">
+                  {selectedGenres.length}
+                </span>
               )}
-            </div>
-          )}
-        </div>
+            </Button>
 
-        <div className="ml-auto flex items-center gap-2">
-          {/* Card Size Select - immediately after title, to the left */}
-        <div className="ml-4 w-16">
-          <Select value={cardWidth} onValueChange={setCardWidth}>
-            <SelectTrigger className="w-full !pr-2 caret-transparent">
-              <SelectValue placeholder="Card Size" />
-            </SelectTrigger>
-            <SelectContent>
-              {cardWidthOptions.map(opt => (
-                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            {tagPopoverOpen && tagPopoverPos && createPortal(
+              <div
+                ref={tagPopoverRef}
+                role="dialog"
+                aria-label="Filter by tags"
+                style={{
+                  position: "fixed",
+                  top: tagPopoverPos.top,
+                  left: tagPopoverPos.left,
+                  width: tagPopoverPos.width,
+                }}
+                className="z-50 overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-lg"
+              >
+                <div className="flex items-center gap-2 border-b border-border/60 px-2 py-2">
+                  <Search className="h-4 w-4 shrink-0 opacity-60" />
+                  <Input
+                    ref={tagSearchInputRef}
+                    value={tagSearch}
+                    onChange={(e) => setTagSearch(e.target.value)}
+                    placeholder="Search tags…"
+                    className="h-8 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+                  />
+                </div>
+
+                <div className="max-h-72 overflow-y-auto py-1">
+                  {isGenresLoading ? (
+                    <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                      Loading tags…
+                    </div>
+                  ) : filteredGenres.length === 0 ? (
+                    <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                      {(genresData?.length ?? 0) === 0
+                        ? "No tags available yet"
+                        : "No tags match your search"}
+                    </div>
+                  ) : (
+                    <ul className="flex flex-col">
+                      {filteredGenres.map((g) => {
+                        const isChecked = selectedGenres.includes(g.name);
+                        return (
+                          <li key={g.name}>
+                            <button
+                              type="button"
+                              role="checkbox"
+                              aria-checked={isChecked}
+                              onClick={() => toggleGenre(g.name)}
+                              className="group flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground"
+                            >
+                              <span
+                                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${
+                                  isChecked
+                                    ? "border-primary bg-primary text-primary-foreground"
+                                    : "border-input bg-transparent"
+                                }`}
+                              >
+                                {isChecked && <Check className="h-3 w-3" />}
+                              </span>
+                              <span className="flex-1 truncate">{g.name}</span>
+                              <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+                                {g.count}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+
+                {selectedGenres.length > 0 && (
+                  <div className="flex items-center justify-between border-t border-border/60 px-2 py-2">
+                    <span className="text-xs text-muted-foreground">
+                      {selectedGenres.length} selected
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={clearGenres}
+                    >
+                      Clear all
+                    </Button>
+                  </div>
+                )}
+              </div>,
+              document.body,
+            )}
+          </div>
+
+          {/* Right cluster: card size */}
+          <div className="ml-auto flex items-center gap-2 shrink-0">
+            <div className="w-14 sm:w-16">
+              <Select value={cardWidth} onValueChange={setCardWidth}>
+                <SelectTrigger className="w-full !pr-2 caret-transparent h-8 text-xs sm:text-sm">
+                  <SelectValue placeholder="Card Size" />
+                </SelectTrigger>
+                <SelectContent>
+                  {cardWidthOptions.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </div>
-        </div>
-      </div>
+      </RibbonSlot>
 
       {selectedGenres.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {selectedGenres.map((name) => (
             <Badge
               key={name}

@@ -561,3 +561,43 @@ export interface SeriesIntegrityResult {
   success: boolean;
   badFiles: ArchiveIntegrityResult[];
 }
+
+export enum ChapterDownloadStatus {
+  Missing = 0,
+  Queued = 1,
+  Downloaded = 2,
+  Failed = 3,
+}
+
+export interface ChapterProviderDto {
+  providerId: string;
+  provider: string;
+  scanlator: string | null;
+  language: string | null;
+  url: string | null;
+  providerIndex: number;
+  isDownloaded: boolean;
+}
+
+export interface ChapterDto {
+  number: number | null;
+  name: string | null;
+  pageCount: number | null;
+  providerUploadDate: string | null;
+  downloadDate: string | null;
+  filename: string | null;
+  status: ChapterDownloadStatus;
+  providers: ChapterProviderDto[];
+}
+
+export interface DownloadChaptersRequestDto {
+  chapterNumbers?: number[];
+}
+
+export interface DownloadMissingResultDto {
+  enqueuedCount: number;
+}
+
+export interface RefreshChaptersResultDto {
+  jobsEnqueued: number;
+}

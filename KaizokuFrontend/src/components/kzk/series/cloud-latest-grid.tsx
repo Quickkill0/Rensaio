@@ -142,8 +142,17 @@ const CloudLatestCard: React.FC<CloudLatestCardProps> = ({ item, cardWidth, text
                   }
                 }}
               />
-                            {/* Provider Badge - Top Left */}
-              <div className="absolute top-1 left-1 text-white text-xs font-semibold max-w-[70%] rounded shadow">
+
+              {/* Status bar — 2px strip across the top edge, color-coded by
+                  item.status. Same language as the Library cards so the two
+                  surfaces feel cohesive. */}
+              <div
+                className={`pointer-events-none absolute inset-x-0 top-0 z-10 h-0.5 ${getStatusDisplay(item.status).color}`}
+                aria-hidden
+              />
+
+              {/* Provider Badge - Top Left */}
+              <div className="absolute top-1 left-1 text-white text-xs font-semibold max-w-[70%] rounded shadow z-10">
                 <Badge 
                   variant="secondary" 
                   className="bg-black/70"

@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageLayout } from "@/components/kzk/layout/page-layout";
+import { RibbonSlot } from "@/components/kzk/layout/ribbon";
 import { SeriesStatus, type SeriesInfo } from "@/lib/api/types";
 import { useLibrary } from "@/lib/api/hooks/useSeries";
 import { PullToRefresh } from "@/components/ui/pull-to-refresh";
@@ -166,14 +167,13 @@ export default function RootPage() {
 
   return (
     <PageLayout mainClassName="p-2 pb-16 sm:px-6 sm:py-4 sm:pb-4 overflow-y-auto">
-      <PullToRefresh onRefresh={handleRefresh}>
-      <div className="flex flex-col gap-4">
-        {/* Filter row */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Status Filter */}
-          <div className="w-28 sm:w-40">
+      {/* Library contextual ribbon — portaled into the command bar */}
+      <RibbonSlot>
+        <div className="flex w-full items-center gap-2">
+          {/* Status filter */}
+          <div className="w-32 sm:w-40 shrink-0">
             <Select value={tab} onValueChange={setTab}>
-              <SelectTrigger className="w-full !pr-2 caret-transparent h-8 sm:h-9 text-xs sm:text-sm">
+              <SelectTrigger className="w-full !pr-2 caret-transparent h-8 text-xs sm:text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -186,12 +186,13 @@ export default function RootPage() {
             </Select>
           </div>
 
-          <div className="w-28 sm:w-40">
+          {/* Genres */}
+          <div className="w-32 sm:w-40 shrink-0">
             <Select
               value={selectedGenre ?? "__ALL__"}
               onValueChange={(value) => setSelectedGenre(value === "__ALL__" ? null : value)}
             >
-              <SelectTrigger className="w-full !pr-2 caret-transparent h-8 sm:h-9 text-xs sm:text-sm">
+              <SelectTrigger className="w-full !pr-2 caret-transparent h-8 text-xs sm:text-sm">
                 <SelectValue placeholder="All Genres" />
               </SelectTrigger>
               <SelectContent>
@@ -203,13 +204,14 @@ export default function RootPage() {
             </Select>
           </div>
 
+          {/* Sources (permission-gated) */}
           {canBrowseSources && (
-            <div className="w-28 sm:w-48">
+            <div className="w-32 sm:w-48 shrink-0">
               <Select
                 value={selectedProvider ?? "__ALL__"}
                 onValueChange={(value) => setSelectedProvider(value === "__ALL__" ? null : value)}
               >
-                <SelectTrigger className="w-full !pr-2 caret-transparent h-8 sm:h-9 text-xs sm:text-sm">
+                <SelectTrigger className="w-full !pr-2 caret-transparent h-8 text-xs sm:text-sm">
                   <SelectValue placeholder="All Sources" />
                 </SelectTrigger>
                 <SelectContent>
@@ -222,12 +224,11 @@ export default function RootPage() {
             </div>
           )}
 
-          {/* Right side controls */}
-          <div className="flex items-center gap-2 ml-auto">
-            {/* Order Select */}
-            <div className="w-24 sm:w-32">
+          {/* Right cluster: sort, card size, add series */}
+          <div className="ml-auto flex items-center gap-2 shrink-0">
+            <div className="w-28 sm:w-32">
               <Select value={orderBy} onValueChange={setOrderBy}>
-                <SelectTrigger className="w-full !pr-2 caret-transparent h-8 sm:h-9 text-xs sm:text-sm">
+                <SelectTrigger className="w-full !pr-2 caret-transparent h-8 text-xs sm:text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -237,10 +238,9 @@ export default function RootPage() {
               </Select>
             </div>
 
-            {/* Card Size Select */}
             <div className="w-14 sm:w-16">
               <Select value={cardWidth} onValueChange={setCardWidth}>
-                <SelectTrigger className="w-full !pr-2 caret-transparent h-8 sm:h-9 text-xs sm:text-sm">
+                <SelectTrigger className="w-full !pr-2 caret-transparent h-8 text-xs sm:text-sm">
                   <SelectValue placeholder="Card Size" />
                 </SelectTrigger>
                 <SelectContent>
@@ -251,13 +251,14 @@ export default function RootPage() {
               </Select>
             </div>
 
-            <div className="h-8 sm:h-9">
+            <div className="h-8">
               <AddSeries />
             </div>
           </div>
         </div>
+      </RibbonSlot>
 
-        {/* Series grid */}
+      <PullToRefresh onRefresh={handleRefresh}>
         <div className="flex flex-wrap gap-2 sm:gap-4">
           <ListSeries
             filterFn={filterFn}
@@ -268,7 +269,6 @@ export default function RootPage() {
             library={deduplicatedLibrary}
           />
         </div>
-      </div>
       </PullToRefresh>
     </PageLayout>
   );

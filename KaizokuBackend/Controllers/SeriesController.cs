@@ -342,5 +342,83 @@ namespace KaizokuBackend.Controllers
                 return StatusCode(500, $"Error updating series with id {id}");
             }
         }
+
+        /// <summary>
+        /// Returns the aggregated chapter list for a series, grouped across all providers.
+        /// </summary>
+        [HttpGet("{id:guid}/chapters")]
+        [Authorize(Policy = "RequirePermission:CanViewLibrary")]
+        [ProducesResponseType(typeof(List<ChapterDto>), 200)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(500)]
+        public async Task<ActionResult<List<ChapterDto>>> GetChaptersForSeries([FromRoute] Guid id, CancellationToken token = default)
+        {
+            try
+            {
+                var chapters = await _queryService.GetChaptersForSeriesAsync(id, token).ConfigureAwait(false);
+                if (chapters == null)
+                    return NotFound();
+                return Ok(chapters);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting chapters for series {Id}: {Message}", id, ex.Message);
+                return StatusCode(500, $"Error getting chapters for series.");
+            }
+        }
+
+        /// <summary>
+        /// Queues downloads for missing chapters. Supply specific chapter numbers in the
+        /// request body, or omit / send null to queue all missing chapters.
+        /// </summary>
+        [HttpPost("{id:guid}/chapters/download")]
+        [Authorize(Policy = "RequirePermission:CanEditSeries")]
+        [ProducesResponseType(typeof(DownloadMissingResultDto), 200)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(500)]
+        public async Task<ActionResult<DownloadMissingResultDto>> DownloadMissingChapters([FromRoute] Guid id, [FromBody] DownloadChaptersRequestDto? body, CancellationToken token = default)
+        {
+            try
+            {
+                var enqueued = await _commandService.QueueMissingChaptersAsync(id, body?.ChapterNumbers, token).ConfigureAwait(false);
+                return Ok(new DownloadMissingResultDto { EnqueuedCount = enqueued });
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error queuing missing chapters for series {Id}: {Message}", id, ex.Message);
+                return StatusCode(500, $"Error queuing missing chapters.");
+            }
+        }
+
+        /// <summary>
+        /// Enqueues an immediate high-priority GetChapters job for each active provider
+        /// of the series, forcing a chapter list refresh.
+        /// </summary>
+        [HttpPost("{id:guid}/chapters/refresh")]
+        [Authorize(Policy = "RequirePermission:CanEditSeries")]
+        [ProducesResponseType(typeof(RefreshChaptersResultDto), 200)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(500)]
+        public async Task<ActionResult<RefreshChaptersResultDto>> RefreshChapters([FromRoute] Guid id, CancellationToken token = default)
+        {
+            try
+            {
+                var jobsEnqueued = await _commandService.ForceRefreshChaptersAsync(id, token).ConfigureAwait(false);
+                return Ok(new RefreshChaptersResultDto { JobsEnqueued = jobsEnqueued });
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing chapters for series {Id}: {Message}", id, ex.Message);
+                return StatusCode(500, $"Error refreshing chapters.");
+            }
+        }
     }
 }

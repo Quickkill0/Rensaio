@@ -39,6 +39,7 @@ import type { MangaRequest } from '@/lib/api/auth-types';
 import type { LinkedSeries } from '@/lib/api/types';
 import { formatThumbnailUrl } from '@/lib/utils/thumbnail';
 import { AddSeries } from '@/components/kzk/series/add-series';
+import { RibbonSlot } from '@/components/kzk/layout/ribbon';
 
 type StatusFilter = 'all' | 'Pending' | 'Approved' | 'Denied' | 'Cancelled';
 
@@ -264,6 +265,42 @@ export function RequestsTab() {
 
   return (
     <div className="space-y-6">
+      {/* Requests contextual ribbon — title left, history filter right.
+          Only rendered when there's any data to surface; otherwise the
+          ribbon collapses. */}
+      {!isLoading && (
+        <RibbonSlot>
+          <div className="flex w-full items-center gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <h2 className="truncate text-sm font-semibold text-foreground">
+                {isAdmin ? 'Manga Requests' : 'My Requests'}
+              </h2>
+              {pendingRequests.length > 0 && (
+                <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 text-[10px] px-1.5 h-4">
+                  {pendingRequests.length} pending
+                </Badge>
+              )}
+            </div>
+            {historyRequests.length > 0 && (
+              <div className="ml-auto flex items-center gap-2 shrink-0">
+                <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+                  <SelectTrigger className="h-8 text-xs w-32 !pr-2 caret-transparent">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All history</SelectItem>
+                    <SelectItem value="Approved">Approved</SelectItem>
+                    <SelectItem value="Denied">Denied</SelectItem>
+                    <SelectItem value="Cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+        </RibbonSlot>
+      )}
+
       <div>
         <h2 className="text-lg font-semibold text-foreground">
           {isAdmin ? 'Manga Requests' : 'My Requests'}
@@ -303,24 +340,18 @@ export function RequestsTab() {
             </div>
           )}
 
-          {/* History section */}
+          {/* History section — status filter for this section lives in the
+              command bar ribbon (see RibbonSlot above). */}
           <div className="space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <h3 className="text-sm font-semibold text-foreground">History</h3>
-              <div className="flex items-center gap-2">
-                <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-                  <SelectTrigger className="h-7 text-xs w-28">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="Approved">Approved</SelectItem>
-                    <SelectItem value="Denied">Denied</SelectItem>
-                    <SelectItem value="Cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <h3 className="text-sm font-semibold text-foreground">
+                History
+                {statusFilter !== 'all' && (
+                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                    · {statusFilter}
+                  </span>
+                )}
+              </h3>
             </div>
 
             {filteredHistory.length === 0 ? (

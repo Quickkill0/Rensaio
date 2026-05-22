@@ -1,18 +1,13 @@
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
-import { useState, useEffect, useMemo, memo, useRef, Suspense } from "react";
-import { useSeriesById, useSetProviderMatch, useDeleteSeries, useUpdateSeries, useVerifyIntegrity, useCleanupSeries, useRenameSeriesFiles } from "@/lib/api/hooks/useSeries";
-import { useDownloadsForSeries } from "@/lib/api/hooks/useDownloads";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useSeriesById, useDeleteSeries, useUpdateSeries, useVerifyIntegrity, useCleanupSeries, useRenameSeriesFiles } from "@/lib/api/hooks/useSeries";
 import { seriesService } from "@/lib/api/services/seriesService";
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -21,683 +16,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Download, Plus, Power, Search, Trash2, Pause, Play, ExternalLink, ShieldCheck, AlertTriangle, CheckCircle, Clock, Calendar, FileText } from "lucide-react";
-import Image from 'next/image';
-import { SeriesStatus, QueueStatus, ArchiveResult, type ProviderExtendedInfo, type DownloadInfo, type ProviderMatch, type ExistingSource, type SeriesExtendedInfo, type SeriesIntegrityResult, type ArchiveIntegrityResult } from "@/lib/api/types";
+import { Trash2, ShieldCheck, AlertTriangle, FileText } from "lucide-react";
+import { SeriesStatus, ArchiveResult, type ExistingSource, type SeriesExtendedInfo, type SeriesIntegrityResult } from "@/lib/api/types";
 import { useSeriesContext } from "@/contexts/series-context";
-import ReactCountryFlag from "react-country-flag";
-import { getCountryCodeForLanguage } from "@/lib/utils/language-country-mapping";
-import { getStatusDisplay } from "@/lib/utils/series-status";
-import { usePermission, useIsAdmin } from "@/hooks/use-permission";
-import { ProviderMatchDialog } from "@/components/dialogs/provider-match-dialog";
-import { AddSeries } from "@/components/kzk/series/add-series";
-import { formatThumbnailUrl } from "@/lib/utils/thumbnail";
+
+import { usePermission } from "@/hooks/use-permission";
+
+import { DownloadsPanel } from "@/components/kzk/series/detail/downloads-panel";
+import { SeriesHero } from "@/components/kzk/series/detail/series-hero";
+import { SourcesSection } from "@/components/kzk/series/detail/sources-section";
+import { LibraryStatsCard } from "@/components/kzk/series/detail/library-stats-card";
+import { SeriesRibbon } from "@/components/kzk/series/detail/series-ribbon";
+import { ChapterList } from "@/components/kzk/series/detail/chapter-list";
 
 
-// Provider Card Component
-const ProviderCard = ({ provider,
-  useCover,
-  useTitle,
-  useStorage,
-  fromChapter,
-  seriesId,
-  onUseCoverChange,
-  onUseTitleChange,
-  onUseStorageChange,
-  onDisabledChange,
-  onDeleteProvider,
-  onFromChapterChange,
-  deletedProviderStates,
-  canEdit = true,
-}: {
-  provider: ProviderExtendedInfo;
-  useCover: boolean;
-  useTitle: boolean;
-  useStorage: boolean;
-  fromChapter: string;
-  seriesId: string;
-  onUseCoverChange: (providerId: string, enabled: boolean) => void; onUseTitleChange: (providerId: string, enabled: boolean) => void;
-  onUseStorageChange: (providerId: string, enabled: boolean) => void;
-  onDisabledChange: (providerId: string, disabled: boolean) => void;
-  onDeleteProvider: (providerId: string) => void;
-  onFromChapterChange: (providerId: string, value: string) => void;
-  deletedProviderStates: Record<string, boolean>;
-  canEdit?: boolean;
-}) => {
-  const [isEnabled, setIsEnabled] = useState(!provider.isDisabled && !provider.isUninstalled);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const queryClient = useQueryClient();
-  
-  // Sync isEnabled state with provider.isDisabled prop changes
-  useEffect(() => {
-    const newIsEnabled = !provider.isDisabled && !provider.isUninstalled;
-    setIsEnabled(newIsEnabled);
-  }, [provider.isDisabled, provider.isUninstalled, provider.id, provider.provider]);
-  
-  // Check if thumbnailUrl contains 'unknown' to disable cover functionality
-  const hasUnknownThumbnail = provider.thumbnailUrl?.toLowerCase().includes('unknown') ?? false;
-  const [matchDialogOpen, setMatchDialogOpen] = useState(false);
-  const [providerMatch, setProviderMatch] = useState<ProviderMatch | null>(null);
-  const [isLoadingMatch, setIsLoadingMatch] = useState(false);
-  // Local state for fromChapter input to avoid updating on every keystroke
-  const [localFromChapter, setLocalFromChapter] = useState(fromChapter);
-  
-  // Sync localFromChapter state with fromChapter prop changes
-  useEffect(() => {
-    setLocalFromChapter(fromChapter);
-  }, [fromChapter]);
-
-  // Reset useCover to false when thumbnail contains 'unknown'
-  useEffect(() => {
-    if (hasUnknownThumbnail && useCover) {
-      onUseCoverChange(provider.id, false);
-    }
-  }, [hasUnknownThumbnail, useCover, onUseCoverChange, provider.id]);
-
-  // Only use the mutation hook, not the query hook
-  const setMatchMutation = useSetProviderMatch();  const handleEnableDisable = () => {
-    // If currently enabled (isEnabled=true), button shows "Disable", so clicking should disable it (isDisabled=true)
-    // If currently disabled (isEnabled=false), button shows "Enable", so clicking should enable it (isDisabled=false)
-    
-    // Current enabled state
-    const currentlyEnabled = isEnabled;
-    
-    // FIXED: When clicking "Enable" (currentlyEnabled is false), we want isDisabled=false
-    //        When clicking "Disable" (currentlyEnabled is true), we want isDisabled=true
-    const newDisabledState = currentlyEnabled; // This is the correct logic!
-    
-    
-    // Send to parent to update backend - the UI state will be updated via props/useEffect
-    onDisabledChange(provider.id, newDisabledState);
-  };const handleMatch = async () => {
-    if (provider.isUnknown) {
-      setMatchDialogOpen(true); // Open dialog immediately
-      setIsLoadingMatch(true);
-      try {
-        // Import the service directly to call it manually
-        const { seriesService } = await import("@/lib/api/services/seriesService");
-        const matchData = await seriesService.getMatch(provider.id);
-        setProviderMatch(matchData);
-      } catch (error) {
-        console.error("Failed to fetch match data:", error);
-        setProviderMatch(null); // Set to null on error
-      } finally {
-        setIsLoadingMatch(false);
-      }
-    }
-  };  const handleMatchSave = (updatedMatch: ProviderMatch) => {
-    setMatchMutation.mutate(updatedMatch, {
-      onSuccess: () => {
-        setMatchDialogOpen(false);
-        // Refetch series data instead of full page reload
-        queryClient.invalidateQueries({ 
-          queryKey: ['series', 'detail', seriesId] 
-        });
-        // Also invalidate library cache since series data changed
-        queryClient.invalidateQueries({ 
-          queryKey: ['series', 'library'] 
-        });
-      },
-      onError: (error) => {
-        console.error("Failed to save match:", error);
-      }
-    });
-  };
-  const handleDelete = () => {
-    setShowDeleteConfirm(true);
-  };
-
-  const handleDeleteConfirm = () => {
-    onDeleteProvider(provider.id);
-    setShowDeleteConfirm(false);
-  };
-  const handleDeleteCancel = () => {
-    setShowDeleteConfirm(false);
-  };
-  
-  // Handle fromChapter input blur (submit on defocus)
-  const handleFromChapterBlur = () => {
-    if (localFromChapter !== fromChapter) {
-      onFromChapterChange(provider.id, localFromChapter);
-    }
-  };
-  
-  // Handle fromChapter input key press (submit on Enter)
-  const handleFromChapterKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.currentTarget.blur(); // This will trigger onBlur
-    }
-  };
-  
-  return (
-    <Card className={`transition-all overflow-hidden bg-secondary ${provider.isDisabled ? "opacity-60" : ""}`}>
-      <div className="px-3 py-2 min-w-0 overflow-hidden">
-        <div className="flex gap-3 min-w-0">
-          {/* Small provider thumbnail */}
-          <div className="flex-shrink-0 hidden sm:block">
-            <img
-              src={formatThumbnailUrl(provider.thumbnailUrl)}
-              alt={provider.title}
-              className="w-12 h-16 object-cover rounded border"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                if (target.src !== window.location.origin + '/kaizoku.net.png') {
-                  target.src = '/kaizoku.net.png';
-                }
-              }}
-            />
-          </div>
-
-          {/* Content area */}
-          <div className="flex-1 min-w-0 overflow-hidden">
-            {/* Title row */}
-            <div className="text-sm font-medium truncate min-w-0 leading-tight" title={provider.title}>
-              {provider.title}
-            </div>
-
-            {/* Row 1: Provider identity + chapter info */}
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0 mt-0.5">
-              {/* Provider name with optional link */}
-              {provider.url ? (
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors min-w-0"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(provider.url, '_blank', 'noopener,noreferrer');
-                  }}
-                  title="Open in source"
-                >
-                  <span className="truncate">{provider.provider}{(provider.provider != provider.scanlator && provider.scanlator) ? ` • ${provider.scanlator}` : ''}</span>
-                  <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                </button>
-              ) : (
-                <span className="text-xs text-muted-foreground truncate">
-                  {provider.provider}{(provider.provider != provider.scanlator && provider.scanlator) ? ` • ${provider.scanlator}` : ''}
-                </span>
-              )}
-
-              <ReactCountryFlag
-                countryCode={getCountryCodeForLanguage(provider.lang)}
-                svg
-                style={{ width: '16px', height: '12px', borderRadius: '2px', border: '1px solid #ccc', flexShrink: 0 }}
-                title={provider.lang.toUpperCase()}
-              />
-
-              <Badge variant="default" className={`text-xs px-1.5 py-0 flex-shrink-0 ${getStatusDisplay(provider.status).color}`}>
-                {getStatusDisplay(provider.status).text}
-              </Badge>
-
-              {provider.isUninstalled && (
-                <Badge variant="destructive" className="text-xs px-1.5 py-0 flex-shrink-0">
-                  <AlertTriangle className="h-3 w-3 mr-0.5" />
-                  Uninstalled
-                </Badge>
-              )}
-
-              <span className="text-xs text-muted-foreground flex-shrink-0">Ch. {provider.chapterList}</span>
-
-              {provider.lastChapter && (
-                <span className="text-xs text-muted-foreground flex-shrink-0">
-                  Last: <span className="font-medium text-foreground/80">{provider.lastChapter}</span>
-                  {provider.lastChangeUTC && (
-                    <span className="ml-1 text-foreground/60">
-                      {(() => {
-                        const utcString = provider.lastChangeUTC.includes('Z') || provider.lastChangeUTC.includes('+') || provider.lastChangeUTC.includes('-', 10)
-                          ? provider.lastChangeUTC
-                          : provider.lastChangeUTC + 'Z';
-                        return new Date(utcString).toLocaleDateString();
-                      })()}
-                    </span>
-                  )}
-                </span>
-              )}
-            </div>
-
-            {/* Row 2: Controls — compact inline layout */}
-            {canEdit && (
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 min-w-0">
-                {!provider.isUnknown && (
-                  <>
-                    <label className="inline-flex items-center gap-1 cursor-pointer flex-shrink-0">
-                      <Switch
-                        id={`storage-${provider.id}`}
-                        checked={useStorage}
-                        onCheckedChange={(checked) => onUseStorageChange(provider.id, checked)}
-                        disabled={provider.isDisabled}
-                        className="flex-shrink-0 scale-75"
-                      />
-                      <span className="text-[11px] text-muted-foreground whitespace-nowrap">Perm</span>
-                    </label>
-
-                    <label className="inline-flex items-center gap-1 cursor-pointer flex-shrink-0">
-                      <Switch
-                        id={`cover-${provider.id}`}
-                        checked={useCover}
-                        onCheckedChange={hasUnknownThumbnail ? undefined : (checked) => onUseCoverChange(provider.id, checked)}
-                        disabled={provider.isDisabled || hasUnknownThumbnail}
-                        className="flex-shrink-0 scale-75"
-                      />
-                      <span className="text-[11px] text-muted-foreground whitespace-nowrap">Cover</span>
-                    </label>
-
-                    <label className="inline-flex items-center gap-1 cursor-pointer flex-shrink-0">
-                      <Switch
-                        id={`title-${provider.id}`}
-                        checked={useTitle}
-                        onCheckedChange={(checked) => onUseTitleChange(provider.id, checked)}
-                        disabled={provider.isDisabled}
-                        className="flex-shrink-0 scale-75"
-                      />
-                      <span className="text-[11px] text-muted-foreground whitespace-nowrap">Title</span>
-                    </label>
-
-                    <div className="inline-flex items-center gap-1 flex-shrink-0">
-                      <span className="text-[11px] text-muted-foreground whitespace-nowrap">After:</span>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        value={localFromChapter}
-                        onChange={(e) => setLocalFromChapter(e.target.value)}
-                        placeholder="0"
-                        className="h-6 w-16 text-[11px] bg-background text-right tabular-nums font-mono"
-                        disabled={provider.isDisabled}
-                        onBlur={handleFromChapterBlur}
-                        onKeyDown={handleFromChapterKeyDown}
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div className="flex-1" />
-
-                {/* Action buttons — always inline */}
-                <div className="inline-flex items-center gap-1 flex-shrink-0">
-                  {!provider.isUnknown && !provider.isUninstalled && (
-                    <Button
-                      variant={isEnabled ? "destructive" : "default"}
-                      size="sm"
-                      className="h-6 px-1.5 text-[11px]"
-                      onClick={handleEnableDisable}
-                    >
-                      <Power className="h-3 w-3" />
-                      <span className="hidden sm:inline ml-1">{isEnabled ? "Disable" : "Enable"}</span>
-                    </Button>
-                  )}
-
-                  {provider.isUnknown && (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="h-6 px-1.5 text-[11px]"
-                      onClick={handleMatch}
-                      disabled={isLoadingMatch}
-                    >
-                      <Search className="h-3 w-3" />
-                      <span className="hidden sm:inline ml-1">{isLoadingMatch ? "..." : "Match"}</span>
-                    </Button>
-                  )}
-
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="h-6 px-1.5 text-[11px]"
-                    onClick={handleDelete}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    <span className="hidden sm:inline ml-1">Delete</span>
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Provider Match Dialog */}
-      <ProviderMatchDialog
-        open={matchDialogOpen}
-        onOpenChange={setMatchDialogOpen}
-        providerMatch={providerMatch}
-        onSave={handleMatchSave}
-        isLoading={setMatchMutation.isPending}
-        isLoadingData={isLoadingMatch}
-        deletedProviderStates={deletedProviderStates}
-      />
-
-      {/* Delete Confirmation Dialog */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-background border rounded-lg p-6 max-w-md mx-4">
-            <h3 className="text-lg font-semibold mb-2">Confirm Delete</h3>
-            <p className="text-muted-foreground mb-4">
-              Are you sure you want to delete this source? This action cannot be undone.
-            </p>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={handleDeleteCancel}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={handleDeleteConfirm}>
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </Card>
-  );
-};
-
-// Helper function to get status icon
-const getStatusIcon = (status: QueueStatus, isScheduledForFuture?: boolean) => {
-  // Special case for future scheduled downloads
-  if (isScheduledForFuture) {
-    return <Calendar className="h-4 w-4 text-yellow-500" />;
-  }
-  
-  switch (status) {
-    case QueueStatus.RUNNING:
-      return <Download className="h-4 w-4 text-blue-500 animate-pulse" />;
-    case QueueStatus.COMPLETED:
-      return <CheckCircle className="h-4 w-4 text-green-500" />;
-    case QueueStatus.FAILED:
-      return <AlertTriangle className="h-4 w-4 text-red-500" />;
-    case QueueStatus.WAITING:
-      return <Clock className="h-4 w-4 text-yellow-500" />;
-    default:
-      return <Clock className="h-4 w-4 text-gray-500" />;
-  }
-};
-
-// Download Item Component
-const DownloadItem = ({ download }: { download: DownloadInfo }) => {
-  // Helper function to normalize UTC date strings
-  const normalizeUtcString = (dateString: string) => {
-    return dateString.includes('Z') || dateString.includes('+') || dateString.includes('-', 10) 
-      ? dateString 
-      : dateString + 'Z';
-  };
-
-  // Determine which date to display and its label
-  const utcDateString = download.downloadDateUTC || download.scheduledDateUTC;
-  const dateLabel = download.downloadDateUTC ? 'Downloaded' : 'Scheduled';
-  
-  // Create Date object from properly normalized UTC string
-  const displayDate = new Date(normalizeUtcString(utcDateString));
-  const now = new Date();
-
-  // Status color mapping - matches getStatusDisplay badge styling
-  const getStatusColor = (status: QueueStatus) => {
-    switch (status) {
-      case QueueStatus.WAITING:
-        return 'bg-yellow-500 text-white';
-      case QueueStatus.RUNNING:
-        return 'bg-blue-500 text-white';
-      case QueueStatus.COMPLETED:
-        return 'bg-green-500 text-white';
-      case QueueStatus.FAILED:
-        return 'bg-red-500 text-white';
-      default:
-        return 'bg-gray-500 text-white';
-    }
-  };
-
-  // Status text mapping - consistent with series status display
-  const getStatusText = (status: QueueStatus) => {
-    if (status === QueueStatus.WAITING) {
-      // If scheduled in the future, show 'Scheduled' instead of 'Waiting'
-      if (displayDate > now) return 'Scheduled';
-      return 'Waiting';
-    }
-    switch (status) {
-      case QueueStatus.RUNNING:
-        return 'Running';
-      case QueueStatus.COMPLETED:
-        return 'Completed';
-      case QueueStatus.FAILED:
-        return 'Failed';
-      default:
-        return 'Unknown';
-    }
-  };
-
-  // Determine if we should show the date/time
-  let showDate = false;
-  if (download.status === QueueStatus.WAITING) {
-    // Only show if scheduled in the future
-    showDate = displayDate > now;
-  } else if (download.status === QueueStatus.COMPLETED || download.status === QueueStatus.FAILED) {
-    showDate = true;
-  } 
-  // Do not show for RUNNING status
-
-  return (
-    <Card className="transition-all duration-200 flex-shrink-0 overflow-hidden">
-      <CardHeader className="pb-2 p-2">
-        <div className="flex items-start gap-3 min-w-0 overflow-hidden">
-          <Image
-            src={download.thumbnailUrl ? formatThumbnailUrl(download.thumbnailUrl) : '/kaizoku.net.png'}
-            alt={download.title || 'Download'}
-            width={60}
-            height={80}
-            className="rounded-md object-cover flex-shrink-0"
-            onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-              const target = e.target as HTMLImageElement;
-              target.src = '/kaizoku.net.png';
-            }}
-          />
-          <div className="flex-1 min-w-0 overflow-hidden">
-            <CardTitle className="text-base line-clamp-2 leading-tight break-words">
-              {download.title || 'Unknown Series'}
-            </CardTitle>
-            <p className="text-sm text-muted-foreground line-clamp-2 mt-1 break-words">
-              {download.chapterTitle ? download.chapterTitle : `Chapter ${download.chapter}`}
-            </p>
-            <div className='flex flex-wrap items-center gap-2 mt-1 min-w-0'>
-              {(download.provider || download.scanlator) && (
-                download.url ? (
-                  <p
-                    className="text-sm text-muted-foreground flex items-center gap-1 cursor-pointer hover:bg-accent/80 transition-colors truncate min-w-0"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (download.url) {
-                        window.open(download.url, '_blank', 'noopener,noreferrer');
-                      }
-                    }}
-                    title="Click to open the chapter in the source"
-                  >
-                    <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                    <span className="truncate">{download.provider}
-                    {(download.provider !== download.scanlator && download.scanlator) ? ` • ${download.scanlator}` : ''}</span>
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground truncate min-w-0">
-                    {download.provider}
-                    {(download.provider !== download.scanlator && download.scanlator) ? ` • ${download.scanlator}` : ''}
-                  </p>
-                )
-              )}
-              {getStatusIcon(download.status, download.status === QueueStatus.WAITING && displayDate > now)}
-              {showDate && (
-                <div className="text-xs text-muted-foreground font-medium flex-shrink-0">
-                  {download.status === QueueStatus.COMPLETED || download.status === QueueStatus.FAILED ? (
-                    <>
-                      {displayDate.toLocaleDateString()}&nbsp;
-                      {displayDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </>
-                  ) : (
-                    displayDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                  )}
-                </div>
-              )}
-              {download.retries > 0 && (
-                <div className="text-xs text-orange-600 font-medium ml-auto flex-shrink-0">
-                  Retries: {download.retries}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </CardHeader>
-    </Card>
-  );
-};
-
-/**
- * Downloads Panel Component - Fully disconnected from ProviderExtendedInfo
- * 
- * Features:
- * - Uses new getDownloadsForSeries API endpoint
- * - Live polling every 10 seconds for real-time updates
- * - Memoized component to prevent unnecessary re-renders
- * - Memoized sorted downloads array for performance
- * - Loading indicator during data fetch
- * - Error handling with fallback UI
- * - Only re-renders when downloads data actually changes
- * - Auto-refreshes series and providers when downloads complete
- * - Properly handles series deletion to prevent infinite loops
- */
-const DownloadsPanel = memo(({ seriesId, isDeleting }: { seriesId: string; isDeleting: boolean }) => {
-  const queryClient = useQueryClient();
-  
-  // Track previous downloads state to detect completion
-  const previousDownloadsRef = useRef<DownloadInfo[] | null>(null);
-  
-  // Fetch downloads with live polling every 10 seconds, but disable when deleting
-  const { data: downloads, isLoading: downloadsLoading, error: downloadsError } = useDownloadsForSeries(seriesId, {
-    refetchInterval: isDeleting ? false : 10000, // Stop polling when deleting
-    refetchIntervalInBackground: !isDeleting, // Stop background polling when deleting
-    staleTime: 5000, // Consider data stale after 5 seconds
-    enabled: !isDeleting, // Disable query entirely when deleting
-  });
-
-  // Detect when active downloads (waiting/running) complete and trigger series refresh
-  useEffect(() => {
-    // Skip all logic if we're in the process of deleting
-    if (isDeleting) {
-      return;
-    }
-    
-    if (!downloads || !previousDownloadsRef.current) {
-      // First load or no previous data - just store current state
-      previousDownloadsRef.current = downloads || null;
-      return;
-    }
-
-    const previousDownloads = previousDownloadsRef.current;
-    const currentDownloads = downloads;
-
-    // Check if previous downloads had waiting or running items
-    const previousActiveDownloads = previousDownloads.filter(
-      download => download.status === QueueStatus.WAITING || download.status === QueueStatus.RUNNING
-    );
-
-    // Check if current downloads have waiting or running items  
-    const currentActiveDownloads = currentDownloads.filter(
-      download => download.status === QueueStatus.WAITING || download.status === QueueStatus.RUNNING
-    );
-
-    const hadActiveDownloads = previousActiveDownloads.length > 0;
-    const hasActiveDownloads = currentActiveDownloads.length > 0;
-
-    // If we had active downloads before but don't now, trigger series refresh
-    if (hadActiveDownloads && !hasActiveDownloads) {
-      
-      // Small delay to ensure backend has processed the completion and updated series data
-      setTimeout(() => {
-        // Only refresh if we're not deleting the series
-        if (!isDeleting) {
-          // Refresh both series data and providers data
-          queryClient.invalidateQueries({ 
-            queryKey: ['series', 'detail', seriesId] 
-          });
-          
-          // Also refresh sources/providers to get updated chapter counts and metadata
-          queryClient.invalidateQueries({ 
-            queryKey: ['series', 'sources'] 
-          });
-          
-        }
-      }, 1000);
-    }
-
-    // Update the previous state
-    previousDownloadsRef.current = downloads;
-  }, [downloads, seriesId, queryClient, isDeleting]);
-
-  // Memoize sorted downloads to prevent unnecessary re-renders
-  const sortedDownloads = useMemo(() => {
-    if (!downloads?.length) return [];
-    
-    return [...downloads].sort((a, b) => {
-      //const dateA = a.downloadDateUTC ? new Date(a.downloadDateUTC) : new Date(a.scheduledDateUTC);
-      //const dateB = b.downloadDateUTC ? new Date(b.downloadDateUTC) : new Date(b.scheduledDateUTC);
-      const dateA = new Date(a.scheduledDateUTC);
-      const dateB = new Date(b.scheduledDateUTC);
-      return dateB.getTime() - dateA.getTime();
-    });
-  }, [downloads]);
-
-  if (downloadsError) {
-    return (
-      <Card className="flex flex-col overflow-hidden min-w-0 lg:max-h-[600px]">
-        <CardHeader className="pl-4 pr-4 pt-4 pb-0 flex-shrink-0">
-          <CardTitle className="flex items-center gap-2">
-            <Download className="h-5 w-5 flex-shrink-0" />
-            <span className="truncate">Latest Downloads</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-4 flex-1 min-w-0">
-          <div className="text-center text-muted-foreground py-3">
-            <Download className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>Failed to load downloads</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="flex flex-col overflow-hidden min-w-0 lg:max-h-[600px]">
-      <CardHeader className="pl-4 pr-4 pt-4 pb-0 flex-shrink-0">
-        <CardTitle className="flex items-center gap-2 flex-wrap">
-          <Download className="h-5 w-5 flex-shrink-0" />
-          <span className="truncate">Latest Downloads</span>
-          {sortedDownloads.length > 0 && (
-            <Badge variant="secondary" className="ml-2 text-xs flex-shrink-0">
-              {sortedDownloads.length}
-            </Badge>
-          )}
-          {downloadsLoading && (
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary flex-shrink-0"></div>
-          )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex-1 overflow-auto p-3 min-w-0">
-        {sortedDownloads.length > 0 ? (
-          <div className="space-y-2">
-            {sortedDownloads.map((download, index) => (
-              <DownloadItem 
-                key={`${download.title}-${download.chapter}-${download.provider}-${download.scheduledDateUTC}-${index}`} 
-                download={download} 
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center text-muted-foreground">
-              <Download className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No downloads yet</p>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-});
-
-DownloadsPanel.displayName = 'DownloadsPanel';
 
 export default function SeriesPage() {
   return (
@@ -1287,7 +619,6 @@ function SeriesPageContent() {
   
   // Determine the effective series status
   const effectiveStatus = series && (!hasActiveProviders || allProvidersDisabled) ? SeriesStatus.DISABLED : (series?.status ?? SeriesStatus.UNKNOWN);
-  const statusDisplay = getStatusDisplay(effectiveStatus);
 
   // Update series title in context when display title changes
   useEffect(() => {
@@ -1758,262 +1089,109 @@ function SeriesPageContent() {
       lang: provider.lang
     }));
 
-  // Count of non-deleted providers
-  const visibleProvidersCount = series.providers.filter(provider => !providerDeletedStates[provider.id]).length;
+  // Visible (non-deleted) providers array
+  const visibleProviders = series.providers.filter(provider => !providerDeletedStates[provider.id]);
+
+  // Inline rename handler shared by hero and rename notification banner
+  const handleRenameFiles = async () => {
+    if (!seriesId) return;
+    try {
+      await renameFiles.mutateAsync(seriesId);
+      setVerifyResult({ success: true, badFiles: [] });
+      setShowVerifyDialog(true);
+    } catch {
+      // Error handled by mutation
+    }
+  };
 
   return (<>
-    {/* New layout: full-width hero, then sources + downloads side-by-side */}
-    <div className="space-y-3 w-full">
+    {/* Ribbon — back nav + series title */}
+    <SeriesRibbon
+      seriesTitle={displayTitle}
+      onBack={() => router.push('/library')}
+    />
 
-      {/* Hero Card - full width, compact */}
-      <Card className="bg-secondary overflow-hidden">
-        <CardHeader className="p-3 sm:p-4">
-          <div className="flex flex-col md:flex-row gap-3 sm:gap-4 min-w-0 overflow-hidden">
-            {/* Poster */}
-            <div className="flex-shrink-0 mx-auto md:mx-0">
-              <img src={formatThumbnailUrl(displayThumbnail)}
-                alt={displayTitle}
-                style={{ aspectRatio: '4/6' }}
-                className="h-40 sm:h-48 md:h-64 object-cover rounded-lg border"
-              />
-            </div>
+    {/* New layout: full-width hero, then 12-col grid */}
+    <div className="w-full">
 
-            {/* Series Info */}
-            <div className="flex-1 gap-1.5 sm:gap-2 flex flex-col min-w-0 overflow-hidden">
-              {/* Title + Status Badge Row */}
-              <div className="flex items-start justify-between gap-2 min-w-0">
-                <CardTitle className="text-lg sm:text-xl lg:text-2xl line-clamp-2 min-w-0 leading-tight">{displayTitle}</CardTitle>
-                <Badge className={'text-xs sm:text-sm flex-shrink-0 ' + statusDisplay.color}>
-                  {statusDisplay.text}
-                </Badge>
-              </div>
-
-              {/* Chapter info row — plain text, no bubbles */}
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm min-w-0 text-muted-foreground">
-                <span className="font-medium text-foreground">Ch. {series.chapterList}</span>
-                {series.lastChapter && (
-                  <>
-                    <span className="opacity-40">·</span>
-                    <span>Last: <span className="font-medium text-foreground">{series.lastChapter}</span></span>
-                  </>
-                )}
-                {series.lastChangeUTC && (
-                  <>
-                    <span className="opacity-40">·</span>
-                    <span className="text-foreground/70">
-                      {new Date(series.lastChangeUTC).toLocaleDateString()} {new Date(series.lastChangeUTC).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </>
-                )}
-              </div>
-
-              {/* Author / Artist — one compact line */}
-              {(series.author || series.artist) && (
-                <div className="text-sm text-muted-foreground min-w-0 truncate">
-                  {series.author && <span><span className="text-foreground/60">By</span> <span className="font-medium text-foreground">{series.author}</span></span>}
-                  {series.author && series.artist && <span className="mx-1.5 opacity-40">·</span>}
-                  {series.artist && <span><span className="text-foreground/60">Art by</span> <span className="font-medium text-foreground">{series.artist}</span></span>}
-                </div>
-              )}
-
-              {/* Genre tags — smaller on mobile */}
-              {series.genre && series.genre.length > 0 && (
-                <div className="flex flex-wrap gap-1 min-w-0 overflow-hidden">
-                  {series.genre.map((genre) => (
-                    <span key={genre} className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border flex-shrink-0">
-                      {genre}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {/* Description - clamped */}
-              {series.description && (
-                <div className="min-w-0 overflow-hidden hidden sm:block">
-                  <p className="text-sm line-clamp-2 md:line-clamp-3 break-words text-muted-foreground">{series.description}</p>
-                </div>
-              )}
-
-              {/* Path — hidden on mobile */}
-              {series.path && (
-                <div className="min-w-0 overflow-hidden flex-1 hidden sm:block">
-                  <div className="bg-background border border-input rounded-md px-2 py-1 text-xs font-mono text-muted-foreground break-all shadow-sm w-full overflow-hidden">
-                    {series.path}
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              {(canDelete || canEdit || canManageDownloads) && (
-                <div className="flex flex-wrap gap-1.5 sm:gap-2 mt-auto pt-1 justify-center sm:justify-start flex-shrink-0">
-                  {canDelete && (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="h-8 text-xs sm:text-sm"
-                      onClick={handleDeleteSeriesClick}
-                    >
-                      <Trash2 className="h-4 w-4 sm:mr-1" />
-                      <span className="hidden sm:inline">Delete</span>
-                    </Button>
-                  )}
-
-                  {canEdit && (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="h-8 text-xs sm:text-sm"
-                      onClick={handleVerifyIntegrityClick}
-                      disabled={verifyIntegrity.isPending}
-                    >
-                      <ShieldCheck className="h-4 w-4 sm:mr-1" />
-                      <span className="hidden sm:inline">{verifyIntegrity.isPending ? "..." : "Verify"}</span>
-                    </Button>
-                  )}
-
-                  {canEdit && (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="h-8 text-xs sm:text-sm"
-                      onClick={async () => {
-                        if (!seriesId) return;
-                        try {
-                          await renameFiles.mutateAsync(seriesId);
-                          setShowVerifySuccessDialog(true);
-                        } catch {
-                          // Error handled by mutation
-                        }
-                      }}
-                      disabled={renameFiles.isPending}
-                    >
-                      <FileText className="h-4 w-4 sm:mr-1" />
-                      <span className="hidden sm:inline">{renameFiles.isPending ? "..." : "Rename"}</span>
-                    </Button>
-                  )}
-
-                  {canManageDownloads && (
-                    <Button
-                      variant={pausedDownloads ? "default" : "destructive"}
-                      size="sm"
-                      className="h-8 text-xs sm:text-sm"
-                      onClick={handlePausedDownloadsToggle}
-                    >
-                      {pausedDownloads ? (
-                        <>
-                          <Play className="h-4 w-4 sm:mr-1" />
-                          <span className="hidden sm:inline">Resume</span>
-                        </>
-                      ) : (
-                        <>
-                          <Pause className="h-4 w-4 sm:mr-1" />
-                          <span className="hidden sm:inline">Pause</span>
-                        </>
-                      )}
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
+      {/* Cinematic hero */}
+      <SeriesHero
+        series={series}
+        displayTitle={displayTitle}
+        displayThumbnail={displayThumbnail ?? ''}
+        effectiveStatus={effectiveStatus}
+        pausedDownloads={pausedDownloads}
+        canEditSeries={canEdit}
+        canDeleteSeries={canDelete}
+        canManageDownloads={canManageDownloads}
+        verifyPending={verifyIntegrity.isPending}
+        renamePending={renameFiles.isPending}
+        onPauseToggle={handlePausedDownloadsToggle}
+        onVerify={handleVerifyIntegrityClick}
+        onRename={handleRenameFiles}
+        onDelete={handleDeleteSeriesClick}
+      />
 
       {/* Rename notification — shown when title was recovered from a truncated source name */}
       {series.needsRename && canEdit && (
-        <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
-          <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0" />
-          <span className="flex-1 text-foreground">
-            The full title was recovered from the source. The storage folder and filenames still use the old truncated name.
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-shrink-0 border-amber-500/40 hover:bg-amber-500/20"
-            onClick={async () => {
-              if (!seriesId) return;
-              try {
-                await renameFiles.mutateAsync(seriesId);
-              } catch {
-                // Error handled by mutation
-              }
-            }}
-            disabled={renameFiles.isPending}
-          >
-            <FileText className="h-4 w-4 mr-1.5" />
-            {renameFiles.isPending ? "Renaming..." : "Rename Files"}
-          </Button>
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-4">
+          <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
+            <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0" />
+            <span className="flex-1 text-foreground">
+              The full title was recovered from the source. The storage folder and filenames still use the old truncated name.
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-shrink-0 border-amber-500/40 hover:bg-amber-500/20"
+              onClick={handleRenameFiles}
+              disabled={renameFiles.isPending}
+            >
+              <FileText className="h-4 w-4 mr-1.5" />
+              {renameFiles.isPending ? "Renaming..." : "Rename Files"}
+            </Button>
+          </div>
         </div>
       )}
 
-      {/* Below hero: Sources (2/3) + Downloads (1/3) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 w-full">
+      {/* Main content — Sources full-width, then ChapterList + aside grid */}
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 sm:py-10 space-y-6 lg:space-y-8">
 
-        {/* Sources section — spans 2 columns */}
-        <Card className="overflow-hidden lg:col-span-2">
-          <CardHeader className="p-4 pb-0">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle className="flex items-center gap-2">
-                Sources
-                <Badge variant="secondary">{visibleProvidersCount}</Badge>
-              </CardTitle>
-              {canEdit && (
-                <AddSeries
-                  title={displayTitle}
-                  existingSources={existingSources}
-                  seriesId={series.id}
-                  triggerButton={
-                    <Button>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Sources
-                    </Button>
-                  }
-                />
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="p-4">
-            <div className="space-y-2 min-w-0">
-              {series.providers
-                .filter(provider => !providerDeletedStates[provider.id])
-                .map((provider) => {
-                  const switches = providerSwitches[provider.id] || { useTitle: false, useCover: false, useStorage: false };
-                  const isDisabled = provider.isUninstalled ? true : (providerDisabledStates[provider.id] ?? provider.isDisabled);
-                  const currentFromChapter = providerFromChapters[provider.id] ?? provider.fromChapter?.toString() ?? "";
+        {/* Sources — full width, providers tile in 2-col grid at lg+ */}
+        <SourcesSection
+          series={series}
+          providers={visibleProviders}
+          existingSources={existingSources}
+          providerSwitches={providerSwitches}
+          providerDisabledStates={providerDisabledStates}
+          providerFromChapters={providerFromChapters}
+          providerDeletedStates={providerDeletedStates}
+          onUseTitleChange={handleUseTitleChange}
+          onUseCoverChange={handleUseCoverChange}
+          onUseStorageChange={handleUseStorageChange}
+          onFromChapterChange={handleFromChapterChange}
+          onEnableDisable={handleDisabledChange}
+          onDelete={handleDeleteProvider}
+          canEdit={canEdit}
+        />
 
-                  const updatedProvider = {
-                    ...provider,
-                    isDisabled: isDisabled
-                  };
+        <div className="grid grid-cols-12 gap-6 lg:gap-8">
+          {/* ChapterList — main column */}
+          <div className="col-span-12 lg:col-span-8 min-w-0">
+            <ChapterList seriesId={series.id} canEditSeries={canEdit} />
+          </div>
 
-                  return (
-                    <ProviderCard
-                      key={provider.id}
-                      provider={updatedProvider}
-                      seriesId={series.id}
-                      useCover={switches.useCover}
-                      useTitle={switches.useTitle}
-                      useStorage={switches.useStorage}
-                      fromChapter={currentFromChapter}
-                      onUseCoverChange={handleUseCoverChange}
-                      onUseTitleChange={handleUseTitleChange}
-                      onUseStorageChange={handleUseStorageChange}
-                      onDisabledChange={handleDisabledChange}
-                      onDeleteProvider={handleDeleteProvider}
-                      onFromChapterChange={handleFromChapterChange}
-                      deletedProviderStates={providerDeletedStates}
-                      canEdit={canEdit}
-                    />
-                  );
-                })}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Downloads panel — 1 column, scrollable */}
-        <div className="lg:col-span-1">
-          <DownloadsPanel seriesId={series.id} isDeleting={isDeleting} />
+          {/* Right rail — Downloads + Stats (pinned on desktop) */}
+          {/* 112px = h-14 command bar (56) + h-12 ribbon (48) + 8px gap */}
+          <aside className="col-span-12 lg:col-span-4 min-w-0 space-y-6 lg:sticky lg:top-[112px] lg:self-start">
+            <DownloadsPanel seriesId={series.id} isDeleting={isDeleting} />
+            <LibraryStatsCard
+              series={series}
+              activeProvidersCount={visibleProviders.filter(p => !providerDisabledStates[p.id]).length}
+            />
+          </aside>
         </div>
+
       </div>
     </div>
 
