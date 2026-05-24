@@ -30,8 +30,67 @@ on:
       - "v*"
 
 jobs:
+  prepare:
+    name: Prepare shared build inputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Android.Compat.dll from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          DLL_PATH="Mihon.ExtensionsBridge.Net/libs/Android.Compat.dll"
+          mkdir -p "$(dirname "$DLL_PATH")"
+          gh release download android-compat-v1 \
+            --repo "${{ github.repository }}" \
+            --pattern "Android.Compat.dll" \
+            --dir "$(dirname "$DLL_PATH")" \
+            --clobber
+          echo "Downloaded: $(du -h "$DLL_PATH" | cut -f1)"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Build Frontend
+        working-directory: KaizokuFrontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+
+      - name: Package Frontend for Backend
+        run: |
+          set -euo pipefail
+          cd KaizokuFrontend/out
+          zip -r ../../KaizokuBackend/wwwroot.zip .
+          cd ../..
+          sha256sum KaizokuBackend/wwwroot.zip | awk '{print $1}' > KaizokuBackend/wwwroot.sha256
+          echo "wwwroot.zip:    $(du -h KaizokuBackend/wwwroot.zip | cut -f1)"
+          echo "wwwroot.sha256: $(cat KaizokuBackend/wwwroot.sha256)"
+
+      - name: Upload prep artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-prep
+          path: |
+            Mihon.ExtensionsBridge.Net/libs/Android.Compat.dll
+            KaizokuBackend/wwwroot.zip
+            KaizokuBackend/wwwroot.sha256
+          retention-days: 1
+          if-no-files-found: error
+
   build:
     name: Build (${{ matrix.rid }})
+    needs: prepare
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -55,19 +114,19 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
-      - name: Download Android.Compat.dll from release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download prep artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-prep
+          path: .
+
+      - name: Verify prep artifacts
         run: |
           set -euo pipefail
-          DLL_PATH="Mihon.ExtensionsBridge.Net/libs/Android.Compat.dll"
-          mkdir -p "$(dirname "$DLL_PATH")"
-          gh release download android-compat-v1 \
-            --repo "${{ github.repository }}" \
-            --pattern "Android.Compat.dll" \
-            --dir "$(dirname "$DLL_PATH")" \
-            --clobber
-          echo "Downloaded: $(du -h "$DLL_PATH" | cut -f1)"
+          test -f Mihon.ExtensionsBridge.Net/libs/Android.Compat.dll
+          test -f KaizokuBackend/wwwroot.zip
+          test -f KaizokuBackend/wwwroot.sha256
+          echo "All prep artifacts present."
 
       - name: Determine version
         id: version
