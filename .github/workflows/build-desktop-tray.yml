@@ -1,0 +1,197 @@
+name: Build Desktop Tray
+
+# Builds the KaizokuTray Avalonia desktop application as self-contained
+# single-file binaries for Windows and Linux (x64 + arm64), then publishes
+# them to a GitHub Release.
+#
+# Triggers:
+#   - Push of a tag matching v*  -> auto-build + publish release named after the tag
+#   - Manual dispatch            -> requires 'version' input
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag for the release (e.g. v1.0.0). Required."
+        required: true
+        type: string
+      draft:
+        description: "Publish as draft release"
+        required: false
+        type: boolean
+        default: false
+      prerelease:
+        description: "Mark release as prerelease"
+        required: false
+        type: boolean
+        default: false
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: Build (${{ matrix.rid }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            archive_ext: zip
+          - rid: win-arm64
+            archive_ext: zip
+          - rid: linux-x64
+            archive_ext: tar.gz
+          - rid: linux-arm64
+            archive_ext: tar.gz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Determine version
+        id: version
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="${{ inputs.version }}"
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "::error::No version available. Push a v* tag or provide 'version' input."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building version: $VERSION"
+
+      - name: Publish single-file binary
+        run: |
+          set -euo pipefail
+          dotnet publish KaizokuTray/KaizokuTray.csproj \
+            -c Release \
+            -r ${{ matrix.rid }} \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:DebugType=embedded \
+            -o publish/${{ matrix.rid }}
+
+      - name: List publish output
+        run: ls -la publish/${{ matrix.rid }}/
+
+      - name: Package
+        id: package
+        run: |
+          set -euo pipefail
+          NAME="KaizokuTray-${{ steps.version.outputs.version }}-${{ matrix.rid }}"
+          mkdir -p dist
+
+          if [ "${{ matrix.archive_ext }}" = "zip" ]; then
+            (cd publish/${{ matrix.rid }} && zip -9 -r "../../dist/${NAME}.zip" .)
+            ASSET="dist/${NAME}.zip"
+          else
+            tar -czf "dist/${NAME}.tar.gz" -C publish/${{ matrix.rid }} .
+            ASSET="dist/${NAME}.tar.gz"
+          fi
+
+          echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
+          echo "Packaged: $ASSET ($(du -h "$ASSET" | cut -f1))"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kaizoku-tray-${{ matrix.rid }}
+          path: ${{ steps.package.outputs.asset }}
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="${{ inputs.version }}"
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "::error::No version available."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: kaizoku-tray-*
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -la dist/
+
+      - name: Publish or update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          DRAFT: ${{ inputs.draft }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          NOTES=$(cat <<EOF
+          Desktop tray application builds for Kaizoku.NET ${VERSION}.
+
+          ## Assets
+
+          - Windows x64: \`KaizokuTray-${VERSION}-win-x64.zip\`
+          - Windows ARM64: \`KaizokuTray-${VERSION}-win-arm64.zip\`
+          - Linux x64: \`KaizokuTray-${VERSION}-linux-x64.tar.gz\`
+          - Linux ARM64: \`KaizokuTray-${VERSION}-linux-arm64.tar.gz\`
+
+          Builds are self-contained single-file binaries; no .NET runtime install required.
+
+          **Note:** Binaries are unsigned. Windows SmartScreen or antivirus may warn on first run; macOS users are not currently supported (build target not yet enabled).
+          EOF
+          )
+
+          FLAGS=()
+          if [ "${DRAFT:-false}" = "true" ]; then
+            FLAGS+=("--draft")
+          fi
+          if [ "${PRERELEASE:-false}" = "true" ]; then
+            FLAGS+=("--prerelease")
+          fi
+
+          if gh release view "$VERSION" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$VERSION" dist/* \
+              --clobber \
+              --repo "${{ github.repository }}"
+            gh release edit "$VERSION" \
+              --notes "$NOTES" \
+              --repo "${{ github.repository }}"
+            echo "Updated existing release $VERSION with $(ls dist/ | wc -l) assets."
+          else
+            gh release create "$VERSION" dist/* \
+              --repo "${{ github.repository }}" \
+              --title "Kaizoku.NET $VERSION" \
+              --notes "$NOTES" \
+              "${FLAGS[@]}"
+            echo "Created release $VERSION with $(ls dist/ | wc -l) assets."
+          fi
