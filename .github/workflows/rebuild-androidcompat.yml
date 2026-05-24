@@ -105,14 +105,24 @@ jobs:
           path: Mihon.ExtensionsBridge.Net/libs/Android.Compat.dll
           retention-days: 30
 
-      - name: Update release asset
+      - name: Publish release asset
         run: |
+          set -euo pipefail
           DLL="Mihon.ExtensionsBridge.Net/libs/Android.Compat.dll"
           SHA=$(sha256sum "$DLL" | cut -d' ' -f1)
-          gh release upload android-compat-v1 "$DLL" --clobber
-          gh release edit android-compat-v1 \
-            --notes "Pre-built Android.Compat.dll for CI builds. SHA256: $SHA"
-          echo "Updated release asset with SHA256: $SHA"
+          NOTES="Pre-built Android.Compat.dll for CI builds. SHA256: $SHA"
+
+          # Create the release if it doesn't exist (idempotent — handles fresh forks).
+          if gh release view android-compat-v1 >/dev/null 2>&1; then
+            gh release upload android-compat-v1 "$DLL" --clobber
+            gh release edit android-compat-v1 --notes "$NOTES"
+            echo "Updated existing release android-compat-v1 with SHA256: $SHA"
+          else
+            gh release create android-compat-v1 "$DLL" \
+              --title "Android.Compat.dll (prebuilt)" \
+              --notes "$NOTES"
+            echo "Created release android-compat-v1 with SHA256: $SHA"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
