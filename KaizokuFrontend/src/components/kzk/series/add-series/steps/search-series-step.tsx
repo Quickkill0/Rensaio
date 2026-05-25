@@ -249,46 +249,9 @@ export function SearchSeriesStep({
   const hasResults = allSeries.length > 0;
 
   return (
-    <div className="flex flex-col gap-0">
-      {/* Source filter pills */}
-      {canBrowseSources && (
-        <div className="src-pill-row">
-          {availableSources.map((source) => {
-            const isActive = selectedSources.includes(source.mihonProviderId);
-            return (
-              <button
-                key={source.mihonProviderId}
-                type="button"
-                className={`src-pill${isActive ? " active" : ""}`}
-                data-active={isActive}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => {
-                  setSelectedSources(prev => {
-                    if (prev.includes(source.mihonProviderId)) {
-                      // Keep at least one source selected
-                      if (prev.length === 1) return prev;
-                      return prev.filter(id => id !== source.mihonProviderId);
-                    } else {
-                      return [...prev, source.mihonProviderId];
-                    }
-                  });
-                }}
-              >
-                <span
-                  className="swatch"
-                  style={{ background: swatchForSource(source.mihonProviderId) }}
-                />
-                {source.provider}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Command card */}
-      <div className="cmd-card">
-        {/* Search input row */}
-        <div className="cmd-input-wrap">
+    <div className="search-step">
+      {/* Search input row */}
+      <div className="cmd-input-wrap">
           <Search className="icon" style={{ width: 22, height: 22 }} />
           <input
             className="cmd-input"
@@ -314,6 +277,40 @@ export function SearchSeriesStep({
             </span>
           )}
         </div>
+
+        {/* Source filter pills */}
+        {canBrowseSources && (
+          <div className="src-pill-row">
+            {availableSources.map((source) => {
+              const isActive = selectedSources.includes(source.mihonProviderId);
+              return (
+                <button
+                  key={source.mihonProviderId}
+                  type="button"
+                  className={`src-pill${isActive ? " active" : ""}`}
+                  data-active={isActive}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => {
+                    setSelectedSources(prev => {
+                      if (prev.includes(source.mihonProviderId)) {
+                        if (prev.length === 1) return prev;
+                        return prev.filter(id => id !== source.mihonProviderId);
+                      } else {
+                        return [...prev, source.mihonProviderId];
+                      }
+                    });
+                  }}
+                >
+                  <span
+                    className="swatch"
+                    style={{ background: swatchForSource(source.mihonProviderId) }}
+                  />
+                  {source.provider}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Results area */}
         {error ? (
@@ -421,7 +418,6 @@ export function SearchSeriesStep({
             })}
           </div>
         )}
-      </div>
     </div>
   );
 }

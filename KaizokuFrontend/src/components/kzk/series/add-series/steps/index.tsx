@@ -9,6 +9,7 @@ import {
   LoaderCircle,
   Plus,
   Send,
+  X,
 } from "lucide-react";
 import React from "react";
 import { useAddSeries } from "@/lib/api/hooks/useSeries";
@@ -276,13 +277,21 @@ export function AddSeriesSteps({
 
   return (
     <div className="cmd-card">
-      <div className="stage-label" style={{ padding: "18px 22px 0 22px" }}>
+      <button
+        type="button"
+        className="cmd-close"
+        aria-label="Close"
+        onClick={() => onOpenChange?.(false)}
+      >
+        <X className="h-4 w-4" />
+      </button>
+      <div className="stage-label">
         <span className="eyebrow">{getStageLabel()}</span>
         {title && isAddSourcesMode && (
           <span style={{ fontSize: "11px", color: "hsl(var(--as-fg-muted))", marginLeft: "8px", fontStyle: "italic" }}>{title}</span>
         )}
       </div>
-      <div className="editorial-rule" style={{ margin: "12px 22px 0 22px" }} />
+      <div className="editorial-rule" />
 
       {isStage0 ? (
         <div className="stage-enter">
@@ -319,14 +328,14 @@ export function AddSeriesSteps({
       )}
 
       {error && (
-        <div className="flex items-center gap-2 mx-5 mb-2 px-3 py-2 rounded text-destructive text-sm" style={{ background: "hsla(0 0% 100% / 0.04)", border: "1px solid hsla(0 84% 60% / 0.25)" }}>
+        <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded text-destructive text-sm" style={{ background: "hsla(0 0% 100% / 0.04)", border: "1px solid hsla(0 84% 60% / 0.25)" }}>
           <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
-      <div className="cta-row" style={{ display: "flex", alignItems: "center", gap: "10px", padding: "14px 22px", borderTop: "1px solid hsl(var(--as-border))" }}>
-        <div className="sel-count font-mono" style={{ flex: 1, fontSize: "11px", color: "hsl(var(--as-fg-dim))", fontFamily: "'JetBrains Mono', monospace" }}>
+      <div className="cta-row">
+        <div className="left-meta font-mono">
           {getLeftMetaCopy()}
         </div>
         <button
@@ -345,12 +354,6 @@ export function AddSeriesSteps({
         >
           {icon}
           {label}
-        </button>
-      </div>
-
-      <div className="cmd-mobile-foot">
-        <button type="button" onClick={() => onOpenChange?.(false)}>
-          Close
         </button>
       </div>
     </div>

@@ -378,7 +378,7 @@ export function ConfirmSeriesStep({
                 src={coverUrl}
                 alt={displayTitle}
                 fill
-                sizes="(max-width: 640px) 240px, 200px"
+                sizes="(max-width: 640px) 240px, 180px"
                 className="object-cover"
               />
             ) : (
