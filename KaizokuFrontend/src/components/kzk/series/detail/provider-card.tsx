@@ -49,11 +49,13 @@ function formatRelative(dateString: string | null | undefined): string {
 // ──────────────────────────────────────────────────────────────────────────────
 function PillToggle({
   label,
+  shortLabel,
   checked,
   onChange,
   disabled,
 }: {
   label: string;
+  shortLabel?: string;
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
@@ -77,7 +79,14 @@ function PillToggle({
             : "bg-foreground/30"
         }`}
       />
-      {label}
+      {shortLabel ? (
+        <>
+          <span className="lg:hidden">{shortLabel}</span>
+          <span className="hidden lg:inline">{label}</span>
+        </>
+      ) : (
+        label
+      )}
     </button>
   );
 }
@@ -311,19 +320,22 @@ export const ProviderCard = ({
               <>
                 <div className="flex flex-wrap items-center gap-1">
                   <PillToggle
-                    label="Perm"
+                    label="Permanent Source"
+                    shortLabel="Perm"
                     checked={useStorage}
                     onChange={(v) => onUseStorageChange(provider.id, v)}
                     disabled={isDisabled}
                   />
                   <PillToggle
-                    label="Cover"
+                    label="Use as Cover"
+                    shortLabel="Cover"
                     checked={useCover}
                     onChange={(v) => onUseCoverChange(provider.id, v)}
                     disabled={isDisabled || hasUnknownThumbnail}
                   />
                   <PillToggle
-                    label="Title"
+                    label="Use as Title"
+                    shortLabel="Title"
                     checked={useTitle}
                     onChange={(v) => onUseTitleChange(provider.id, v)}
                     disabled={isDisabled}
