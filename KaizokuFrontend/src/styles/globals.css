@@ -2422,16 +2422,31 @@
   position: fixed !important;
 }
 
-/* Inner glass card — resets cmd-card padding so each region owns its own */
+/* Inner glass card — overrides cmd-card's intrinsic padding and 84vh max-height
+   so the modal can use its own height bound from DialogContent (sm:max-h-[680px]
+   on desktop / 100dvh on mobile). Each interior region owns its own padding.
+
+   IMPORTANT: DialogContent on desktop is sized `h-auto sm:max-h-[680px]`.
+   `h-auto` is shrink-to-fit, so `height:100%` on the shell would resolve
+   against an indefinite parent. We explicitly cap the shell at 680px on
+   desktop and 100dvh on mobile so the flex column has a definite bound and
+   the .iw-search-results child can flex-scroll inside it. */
 .iw-search-shell {
   padding: 0 !important;
   display: flex;
   flex-direction: column;
+  width: 100%;
   height: 100%;
-  /* on mobile this fills the whole DialogContent */
   max-height: 100dvh;
+  min-height: 0;
   overflow: hidden;
   position: relative;
+}
+
+@media (min-width: 641px) {
+  .iw-search-shell {
+    max-height: 680px;
+  }
 }
 
 /* Radial pink glow behind the header */
@@ -2447,9 +2462,11 @@
   z-index: 0;
 }
 
-/* Header band */
+/* Header band — symmetric with the rest of the regions (24px horizontal).
+   Generous top padding gives the eyebrow + title breathing room from the
+   modal's top edge. */
 .iw-search-header {
-  padding: 28px 28px 16px;
+  padding: 24px 24px 14px;
   flex-shrink: 0;
   position: relative;
   z-index: 1;
@@ -2487,18 +2504,17 @@
   font-weight: 600;
 }
 
-/* Search input row inside the re-match modal */
+/* Search input row inside the re-match modal — symmetric 24px horizontal */
 .iw-search-input-wrap {
   margin: 0 !important;
-  padding-left: 20px !important;
-  padding-right: 20px !important;
+  padding: 8px 24px 14px !important;
   position: relative;
   z-index: 1;
 }
 
 /* Source filter row */
 .iw-search-sources-row {
-  padding: 0 20px 2px;
+  padding: 6px 24px 2px;
   position: relative;
   z-index: 1;
 }
@@ -2508,7 +2524,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 20px 4px;
+  margin: 0 24px 4px;
   padding: 8px 12px;
   border-radius: 8px;
   background: hsla(0 72% 51% / 0.1);
@@ -2519,12 +2535,17 @@
   flex-shrink: 0;
 }
 
-/* Results list — reuses .res-list but needs modal-specific padding.
-   The search modal shell is a flex column with overflow:hidden, so
-   flex:1 1 auto + min-height:0 clips the list naturally inside the
-   shell — no inherited 96px bottom clearance leaks through. */
+/* Results list — reuses .res-list but the shell is a flex column with
+   overflow:hidden. flex:1 1 auto + min-height:0 lets this region absorb
+   leftover height while overflow-y:auto enables internal scrolling, so
+   the modal stays bounded by DialogContent's max-h-[680px] / 100dvh and
+   only THIS region scrolls when results overflow. We also kill the
+   inherited 96px bottom clearance from .res-list (intended for the
+   sticky CTA in AddSeries, where the footer overlays the list — here
+   the footer sits OUTSIDE the scroll area as a pinned flex sibling, so
+   that clearance is unnecessary and would create dead space at the bottom). */
 .iw-search-results {
-  padding-bottom: 0;
+  padding: 6px 24px 8px !important;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -2539,9 +2560,19 @@
   margin: 0;
 }
 
-/* Footer — reuses .cta-row but needs top border instead of gradient wash only */
+/* Footer — reuses .cta-row but the shell has padding: 0, so we MUST cancel
+   .cta-row's bleed margins (margin: 16px -24px -20px -24px) that would push the
+   footer outside the modal's rounded edges and cause Cancel/Apply to be clipped
+   by the DialogContent overflow boundary. We restore symmetric internal padding
+   and let the footer span the shell edge-to-edge with its own border-top. */
 .iw-search-footer {
+  margin: 0 !important;
+  padding: 14px 24px !important;
   border-top: 1px solid hsla(var(--as-border));
+  border-bottom-left-radius: 14px;
+  border-bottom-right-radius: 14px;
+  position: relative;
+  bottom: auto;
   flex-shrink: 0;
 }
 
@@ -2564,16 +2595,25 @@
   }
 
   .iw-search-input-wrap {
-    padding-left: 14px !important;
-    padding-right: 14px !important;
+    padding: 6px 16px 12px !important;
   }
 
   .iw-search-sources-row {
-    padding: 0 14px 2px;
+    padding: 4px 16px 2px;
   }
 
   .iw-search-error {
-    margin: 0 14px 4px;
+    margin: 0 16px 4px;
+  }
+
+  .iw-search-results {
+    padding: 4px 16px 8px !important;
+  }
+
+  .iw-search-footer {
+    padding: 12px 16px !important;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
   }
 }
 
@@ -3338,16 +3378,12 @@
 
 /* ── Import card ─────────────────────────────────────────────────────────── */
 /*
- * NOTE on inter-card spacing:
- * react-window measures each row's height from the inner itemRef <div> via a
- * ResizeObserver reading `contentRect.height`. That value EXCLUDES margins, so
- * `margin-bottom` here is invisible to the virtualizer and gives no real gap
- * between rows. We use `padding-bottom` instead — it grows the card's
- * border-box height, which IS the content height of the observed wrapper, so
- * the virtualizer allocates the extra 14px and we get a true gap. The padded
- * space lives inside the card frame (background extends down to it), reading
- * as comfortable breathing room below the match list — matching the rhythm of
- * .iw-radio-card (margin-bottom: 12px) and .iw-stats-row gaps in the Spotlight.
+ * Inter-card spacing is owned by the react-window row wrapper in cards-scroll.tsx
+ * (paddingBottom on the itemRef div), NOT by this rule. Putting the gap on the
+ * row wrapper keeps the gap OUTSIDE the card frame, so the card background does
+ * not extend through the gap and a real visible separation appears between
+ * adjacent cards. The wrapper's ResizeObserver reads the padded height, so the
+ * virtualizer still allocates the extra space correctly.
  */
 .iw-import-card {
   background: linear-gradient(
@@ -3358,7 +3394,6 @@
   border: 1px solid hsla(var(--as-border));
   border-radius: 12px;
   overflow: hidden;
-  padding-bottom: 14px;
   transition: border-color 0.2s ease;
 }
 
@@ -3815,11 +3850,14 @@
     font-size: 9.5px;
   }
 
-  /* Action cluster spans full width below the 2-col grid */
+  /* Action cluster spans full width below the 2-col grid.
+     align-items: flex-start prevents the chapter input from stretching to
+     match the height of a wrapped button-row stack (which was producing
+     a ~80px-tall input on the screenshot). */
   .iw-action-cluster {
     grid-column: 1 / -1;
     flex-direction: row;
-    align-items: stretch;
+    align-items: flex-start;
     width: 100%;
     gap: 8px;
     padding: 14px;
@@ -3830,22 +3868,39 @@
   .iw-action-chapter {
     flex: 1;
     min-width: 0;
+    gap: 3px;
   }
 
-  .iw-action-chapter__input {
+  .iw-action-chapter__label {
+    font-size: 8.5px;
+    letter-spacing: 0.16em;
+  }
+
+  /* Force the actual <input> to a normal control height on mobile.
+     Using !important to override the shadcn Input's intrinsic h-9 utility
+     and to guard against parent stretch flex behaviour. */
+  .iw-action-chapter__input,
+  input.iw-action-chapter__input {
     width: 100%;
-    height: 44px;
+    height: 36px !important;
+    min-height: 36px;
+    max-height: 36px;
+    padding: 4px 10px;
+    font-size: 13px;
+    line-height: 1.2;
   }
 
   .iw-action-btn-row {
     gap: 6px;
     flex: 0 0 auto;
+    align-items: center;
   }
 
   .iw-action-btn {
-    height: 44px;
-    padding: 0 14px;
-    border-radius: 10px;
+    height: 36px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 10px;
   }
 
   /* Match row: stack — cover top-left, info top-right, switches 3-col grid below */

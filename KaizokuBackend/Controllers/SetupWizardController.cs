@@ -4,6 +4,7 @@ using KaizokuBackend.Models;
 using KaizokuBackend.Models.Dto;
 using KaizokuBackend.Models.Enums;
 using KaizokuBackend.Services.Helpers;
+using KaizokuBackend.Services.Images;
 using KaizokuBackend.Services.Import;
 using KaizokuBackend.Services.Jobs;
 using KaizokuBackend.Services.Settings;
@@ -31,12 +32,14 @@ namespace KaizokuBackend.Controllers
         private readonly ImportQueryService _importQueryService;
         private readonly ImportCommandService _importCommandService;
         private readonly SettingsService _settings;
+        private readonly ThumbCacheService _thumb;
         public SetupWizardController(ILogger<SetupWizardController> logger,
             JobManagementService jobManagementService,
             AppDbContext db,
             ImportQueryService importQueryService,
             ImportCommandService importCommandService,
-            SettingsService settings)
+            SettingsService settings,
+            ThumbCacheService thumb)
         {
             _jobManagementService = jobManagementService;
             _db = db;
@@ -44,6 +47,7 @@ namespace KaizokuBackend.Controllers
             _logger = logger;
             _importQueryService = importQueryService;
             _importCommandService = importCommandService;
+            _thumb = thumb;
         }
 
         /// <summary>
@@ -197,7 +201,15 @@ namespace KaizokuBackend.Controllers
         {
             try
             {
-                return Ok(await _importQueryService.GetImportsAsync(token).ConfigureAwait(false));
+                List<ImportSeriesEntry> entries = await _importQueryService.GetImportsAsync(token).ConfigureAwait(false);
+                // Rewrite raw thumb cache keys to public /api/image/{key} URLs.
+                // Providers holds the filesystem snapshot (ImportProviderSnapshot : IThumb).
+                await _thumb.PopulateThumbsAsync(entries.SelectMany(e => e.Providers), "/api/image/", token).ConfigureAwait(false);
+                // Series holds the augmented provider candidates (ProviderSeriesOption : IThumb).
+                await _thumb.PopulateThumbsAsync(
+                    entries.Where(e => e.Series != null).SelectMany(e => e.Series!),
+                    "/api/image/", token).ConfigureAwait(false);
+                return Ok(entries);
             }
             catch (Exception ex)
             {

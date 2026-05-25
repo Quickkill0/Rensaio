@@ -99,11 +99,17 @@ const Row = React.memo(function Row({
   useEffect(() => {
     if (itemRef.current) {
       const observer = new ResizeObserver((entries) => {
-        if (entries[0]) {
-          const height = entries[0].contentRect.height;
-          if (height !== data.getItemSize(index)) {
-            data.setItemSize(index, height);
-          }
+        const entry = entries[0];
+        if (!entry) return;
+        // borderBoxSize includes padding + border; contentRect.height excludes both.
+        // The Row wrapper carries padding-bottom for inter-card spacing, so we MUST
+        // measure border-box to allocate the correct row height in react-window.
+        const blockSize =
+          entry.borderBoxSize && entry.borderBoxSize[0]
+            ? entry.borderBoxSize[0].blockSize
+            : entry.contentRect.height;
+        if (blockSize !== data.getItemSize(index)) {
+          data.setItemSize(index, blockSize);
         }
       });
       observer.observe(itemRef.current);
@@ -113,7 +119,14 @@ const Row = React.memo(function Row({
 
   return (
     <div style={style} className="pr-2">
-      <div ref={itemRef}>
+      {/*
+        Inter-card gap lives HERE on the measured wrapper — not inside .iw-import-card.
+        react-window's ResizeObserver reads this div's contentRect.height, so the
+        14px padding-bottom adds real allocated space between rows AND sits OUTSIDE
+        the card's frame (the card background does not extend through it), producing
+        a true visible gap between cards.
+      */}
+      <div ref={itemRef} style={{ paddingBottom: 14 }}>
         <ImportCard
           key={importItem.path + "|" + importItem.title}
           import={importItem}
