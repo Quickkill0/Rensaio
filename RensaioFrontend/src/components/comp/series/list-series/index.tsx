@@ -126,6 +126,28 @@ export function ListSeries({ filterFn, sortFn, cardWidth = "w-40", cardWidthOpti
   const remainder = columns > 1 ? items.length % columns : 0;
   const dummyCount = remainder === 0 ? 0 : columns - remainder;
 
+  // Empty / no-results state — rendered outside the grid so it isn't capped by
+  // `.grid-auto-fit > *` (max-width: 17rem) and can center on the page.
+  if (!isLoading && (filteredLibrary === undefined || filteredLibrary.length === 0)) {
+    return (
+      <div className="flex min-h-[60vh] w-full flex-col items-center justify-center gap-4 py-16 text-center">
+        <div className="rounded-full bg-muted p-5">
+          <svg className="h-10 w-10 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-base font-medium text-foreground">
+            {debouncedSearchTerm.trim() ? `No results for "${debouncedSearchTerm}"` : "No series found"}
+          </p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {debouncedSearchTerm.trim() ? "Try a different search term." : "Add some manga to get started."}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <TooltipProvider delayDuration={2000}>
       <div className="flex flex-wrap gap-4 grid-auto-fit" ref={gridRef}>
@@ -141,22 +163,6 @@ export function ListSeries({ filterFn, sortFn, cardWidth = "w-40", cardWidthOpti
               </div>
             ))}
           </>
-        ) : filteredLibrary === undefined || filteredLibrary?.length === 0 ? (
-          <div className="flex flex-col items-center justify-center w-full py-16 text-center gap-4">
-            <div className="rounded-full bg-muted p-5">
-              <svg className="h-10 w-10 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-base font-medium text-foreground">
-                {debouncedSearchTerm.trim() ? `No results for "${debouncedSearchTerm}"` : "No series found"}
-              </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {debouncedSearchTerm.trim() ? "Try a different search term." : "Add some manga to get started."}
-              </p>
-            </div>
-          </div>
         ) : (
           <>
             {items.map((series: SeriesInfo, index: number) => {

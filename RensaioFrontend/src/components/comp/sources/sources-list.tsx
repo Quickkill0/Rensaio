@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Search } from "lucide-react";
 import { type Provider, NsfwVisibility } from "@/lib/api/types";
 import { type MultiSelectOption } from "@/components/ui/multi-select";
+import { Input } from "@/components/ui/input";
 import { providerService } from "@/lib/api/services/providerService";
 import { useSettings } from "@/lib/api/hooks/useSettings";
 import { useToast } from "@/hooks/use-toast";
@@ -19,16 +21,39 @@ import { SourceRow } from "./source-row";
 const INITIAL_LIMIT = 24;
 
 interface SourcesListProps {
-  /** Search term driven by the global command-bar search (useSearch context). */
-  searchTerm: string;
+  /** Search term driven by the global command-bar search (useSearch context). Optional in embedded mode. */
+  searchTerm?: string;
   /** Clears the global search term — called after install/uninstall and from the empty state. */
   clearSearch?: () => void;
+  /**
+   * Embedded/wizard mode. There is no global command bar inside dialogs, so the
+   * list renders its own search field and an optional description, and emits
+   * lifecycle callbacks so a host (e.g. the setup wizard) can gate progress.
+   */
+  embedded?: boolean;
+  /** Optional description rendered above the search field in embedded mode. */
+  description?: React.ReactNode;
+  /** Fires whenever the loaded provider set changes (e.g. after install/uninstall). */
+  onExtensionsChange?: (extensions: Provider[]) => void;
+  /** Fires on load/install errors (null clears). */
+  onError?: (error: string | null) => void;
+  /** Fires when the initial load starts/finishes. */
+  onLoadingChange?: (loading: boolean) => void;
 }
 
 export function SourcesList({
   searchTerm,
   clearSearch,
+  embedded = false,
+  description,
+  onExtensionsChange,
+  onError,
+  onLoadingChange,
 }: SourcesListProps) {
+  // ── Embedded search (no global command bar inside dialogs) ───────────────────
+  const [internalSearch, setInternalSearch] = useState('');
+  const effectiveSearchTerm = embedded ? internalSearch : (searchTerm ?? '');
+  const doClearSearch = embedded ? () => setInternalSearch('') : clearSearch;
   // ── Data state ──────────────────────────────────────────────────────────────
   const [extensions, setExtensions] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,17 +106,29 @@ export function SourcesList({
     const loadExtensions = async () => {
       try {
         setLoading(true);
+        onError?.(null);
         const data = await providerService.getProviders();
         setExtensions(data);
       } catch (error) {
         console.error('Failed to load extensions:', error);
         toast({ title: 'Failed to load sources', variant: 'destructive' });
+        onError?.('Failed to load sources. Please try again.');
       } finally {
         setLoading(false);
       }
     };
     void loadExtensions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Lifecycle callbacks for embedded hosts (e.g. setup wizard) ───────────────
+  useEffect(() => {
+    onLoadingChange?.(loading);
+  }, [loading, onLoadingChange]);
+
+  useEffect(() => {
+    onExtensionsChange?.(extensions);
+  }, [extensions, onExtensionsChange]);
 
   // ── Language options (derived from full extensions list) ─────────────────────
   const availableLanguageOptions = useMemo<MultiSelectOption[]>(() => {
@@ -129,8 +166,8 @@ export function SourcesList({
     let list = extensions.filter((ext) => !ext.isInstaled);
 
     // Search filter
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase();
+    if (effectiveSearchTerm.trim()) {
+      const term = effectiveSearchTerm.toLowerCase();
       list = list.filter(
         (ext) =>
           ext.name.toLowerCase().includes(term) ||
@@ -156,7 +193,7 @@ export function SourcesList({
         : b.name.localeCompare(a.name)
     );
     return list;
-  }, [extensions, searchTerm, hideNsfw, selectedLanguages, sort]);
+  }, [extensions, effectiveSearchTerm, hideNsfw, selectedLanguages, sort]);
 
   // ── Sliced display lists (respects INITIAL_LIMIT / expand) ──────────────────
   const visibleInstalled = expanded.installed
@@ -179,7 +216,7 @@ export function SourcesList({
           ext.package === pkgName ? { ...ext, isInstaled: true } : ext
         )
       );
-      clearSearch?.();
+      doClearSearch?.();
 
       // Open preferences for newly installed extension
       const installed = extensions.find((ext) => ext.package === pkgName);
@@ -206,7 +243,7 @@ export function SourcesList({
           ext.package === pkgName ? { ...ext, isInstaled: false } : ext
         )
       );
-      clearSearch?.();
+      doClearSearch?.();
     } catch (error) {
       console.error('Failed to uninstall extension:', error);
       toast({ title: 'Failed to uninstall source', variant: 'destructive' });
@@ -273,6 +310,27 @@ export function SourcesList({
 
   return (
     <div className="space-y-8">
+      {/* Embedded header: description + search field (no global command bar in dialogs) */}
+      {embedded && (
+        <div className="space-y-3">
+          {description && (
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {description}
+            </p>
+          )}
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              value={internalSearch}
+              onChange={(e) => setInternalSearch(e.target.value)}
+              placeholder="Search sources…"
+              className="pl-9"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Filter toolbar (search lives in the global header bar, like Library/Browse) */}
       <SourcesToolbar
         hideNsfw={hideNsfw}
@@ -350,11 +408,11 @@ export function SourcesList({
       {filteredInstalledExtensions.length === 0 &&
         filteredAvailableExtensions.length === 0 && (
           <div className="text-center text-muted-foreground py-12 text-sm">
-            {searchTerm.trim() ? (
+            {effectiveSearchTerm.trim() ? (
               <>
-                No sources found matching &ldquo;{searchTerm}&rdquo;.{' '}
+                No sources found matching &ldquo;{effectiveSearchTerm}&rdquo;.{' '}
                 <button
-                  onClick={() => clearSearch?.()}
+                  onClick={() => doClearSearch?.()}
                   className="text-primary underline hover:no-underline"
                 >
                   View all sources
