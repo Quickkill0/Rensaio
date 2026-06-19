@@ -67,14 +67,26 @@ export function SetupWizard() {
   const [disableDownloads, setDisableDownloads] = React.useState(false);
   const [autoCreatedUsers, setAutoCreatedUsers] = React.useState<string[]>([]);
   const [usersAutoCreated, setUsersAutoCreated] = React.useState(false);
+  // Once the (long-running) import has started it runs in the background, so allow the
+  // user to close the wizard and keep using the app. The import survives reloads.
+  const [importStarted, setImportStarted] = React.useState(false);
 
   if (!isWizardActive) {
     return null;
   }
 
-  return (<Dialog open={true} onOpenChange={() => { /* Prevent closing */ }} modal>
+  return (<Dialog
+    open={true}
+    onOpenChange={(open) => {
+      // Only the import step lets the user close the wizard (via the X button).
+      if (!open && importStarted) {
+        void completeWizard();
+      }
+    }}
+    modal
+  >
     <DialogContent
-      className="w-[98vw] sm:w-[95vw] md:max-w-[90%] lg:max-w-5xl max-h-[95vh] sm:max-h-[90vh] sm:min-h-[85vh] flex flex-col overflow-hidden"
+      className={`w-[98vw] sm:w-[95vw] md:max-w-[90%] lg:max-w-5xl max-h-[95vh] sm:max-h-[90vh] sm:min-h-[85vh] flex flex-col overflow-hidden ${importStarted ? '' : '[&>button]:hidden'}`}
       onInteractOutside={(e) => e.preventDefault()}
       onEscapeKeyDown={(e) => e.preventDefault()}
     >        <DialogHeader>
@@ -197,6 +209,7 @@ export function SetupWizard() {
             setIsLoading={setIsLoading}
             setCanProgress={setCanProgress}
             disableDownloads={disableDownloads}
+            onImportStarted={() => setImportStarted(true)}
             onUsersDetected={(users) => {
               setAutoCreatedUsers(users);
               setUsersAutoCreated(users.length > 0);

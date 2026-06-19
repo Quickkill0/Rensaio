@@ -4,10 +4,8 @@ import { apiClient } from '@/lib/api/client';
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Button } from "@/components/ui/button";
-import { CheckCircle, AlertCircle, Loader2, Flag, MinusCircle } from "lucide-react";
+import { CheckCircle, AlertCircle, Loader2, Flag } from "lucide-react";
 import { useSetupWizardImports, useSetupWizardImportSeriesWithOptions, useSetupWizardImportStatus, useSignalRProgress } from "@/lib/api/hooks/useSetupWizard";
-import { useSetupWizard } from "@/components/providers/setup-wizard-provider";
 import { JobType, ImportStatus } from "@/lib/api/types";
 
 // Custom hook to detect if scrollbar is visible
@@ -56,9 +54,11 @@ interface FinishStepProps {
   setCanProgress: (canProgress: boolean) => void;
   disableDownloads?: boolean;
   onUsersDetected?: (users: string[]) => void;
+  /** Called once the import has started (or was found already running) so the wizard can be closed. */
+  onImportStarted?: () => void;
 }
 
-export function FinishStep({ setError, setIsLoading, setCanProgress, disableDownloads = false, onUsersDetected }: FinishStepProps) {
+export function FinishStep({ setError, setIsLoading, setCanProgress, disableDownloads = false, onUsersDetected, onImportStarted }: FinishStepProps) {
   const hasTriggeredImportRef = useRef(false);
   const [importCompleted, setImportCompleted] = useState(false);
   // Whether we've checked the backend for an already-running import (after a reload).
@@ -70,7 +70,6 @@ export function FinishStep({ setError, setIsLoading, setCanProgress, disableDown
   const { data: imports } = useSetupWizardImports();
   const importMutation = useSetupWizardImportSeriesWithOptions();
   const importStatusMutation = useSetupWizardImportStatus();
-  const { nextStep } = useSetupWizard();
   const { getProgressForJob, isJobCompleted, isJobFailed, getJobProgress } = useSignalRProgress({
     jobTypes: [JobType.ImportSeries],
     onComplete: (jobType) => {
@@ -96,10 +95,12 @@ export function FinishStep({ setError, setIsLoading, setCanProgress, disableDown
           // An import is already in progress on the server - resume monitoring, don't restart it.
           hasTriggeredImportRef.current = true;
           setResumed(true);
+          onImportStarted?.();
         } else if (status.hasCompleted) {
           // The import already finished (e.g. reloaded after completion) - show success.
           hasTriggeredImportRef.current = true;
           setImportCompleted(true);
+          onImportStarted?.();
         }
       })
       .catch(() => {
@@ -126,7 +127,8 @@ export function FinishStep({ setError, setIsLoading, setCanProgress, disableDown
     if (!hasTriggeredImportRef.current && !alreadyCompleted && !alreadyRunning && !alreadyFailed) {
       hasTriggeredImportRef.current = true;
       setError(null);
-      
+      onImportStarted?.();
+
       // Determine what to import
       if (imports && imports.length > 0) {
         const importsToProcess = imports.filter(item =>
@@ -250,21 +252,11 @@ export function FinishStep({ setError, setIsLoading, setCanProgress, disableDown
               )}
 
               {isActive && (
-                <div className="space-y-2 border-t pt-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full min-h-[44px] gap-2"
-                    onClick={() => void nextStep()}
-                  >
-                    <MinusCircle className="h-4 w-4" />
-                    Continue in background
-                  </Button>
-                  <p className="text-xs text-muted-foreground text-center">
-                    The import keeps running on the server. You can finish setup and use the app
-                    while it completes — progress shows in a floating indicator and survives reloads.
-                  </p>
-                </div>
+                <p className="text-xs text-muted-foreground border-t pt-4">
+                  This import runs on the server and keeps going even if you close this window or
+                  reload the page. You can close the wizard and keep using the app — progress shows
+                  in a floating indicator.
+                </p>
               )}
             </CardContent>
           </Card>
