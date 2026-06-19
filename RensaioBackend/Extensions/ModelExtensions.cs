@@ -175,12 +175,12 @@ namespace RensaioBackend.Extensions
                 OnlineRepositoryName = repoName,
                 OnlineRepositoryId = repoId,
                 IsLocal = e.IsLocal,
-                Package = e.Extension?.Package ?? "",
-                Version = e.Extension?.Version ?? "",
+                Package = e.Extension.Package,
+                Version = e.Extension.Version,
                 DownloadUTC = e.DownloadUTC,
                 Id = e.Id.ToString(),
-                Nsfw = e.Extension?.Nsfw == 1,
-                Sources = e.Extension?.Sources.Select(s => s.ToExtensionSource()).ToList() ?? []
+                Nsfw = e.Extension.Nsfw == 1,
+                Sources = e.Extension.Sources.Select(s => s.ToExtensionSource()).ToList()
             };
         }
         public static ExtensionEntryDto ToExtensionEntry(this TachiyomiExtension e, string repoName, string repoId)
@@ -238,7 +238,7 @@ namespace RensaioBackend.Extensions
             storage.SourceRepositoryName = repoName;
             storage.SourcePackageName = extension.Package;
             storage.SourceSourceId = source.Id;
-            storage.ThumbnailUrl = "ext://" + Path.Combine(entry.GetRelativeVersionFolder(), entry.Icon?.FileName ?? "");
+            storage.ThumbnailUrl = "ext://" + Path.Combine(entry.GetRelativeVersionFolder(), entry.Icon.FileName);
             storage.SupportLatest = interop?.SupportsLatest ?? false;
             storage.IsNSFW = extension.Nsfw == 1;
             storage.IsDead = false;
@@ -277,6 +277,9 @@ namespace RensaioBackend.Extensions
                 Status = s.Status,
                 Type = s.Type,
                 StartFromChapter =  s.StartFromChapter,
+                ReleaseCadenceDays = s.ReleaseCadenceDays.HasValue
+                    ? (int?)Math.Abs(s.ReleaseCadenceDays.Value)
+                    : null,
                 Path = EnvironmentSetup.IsDocker ? s.StoragePath : Path.Combine(settings.StorageFolder, s.StoragePath),
                 IsActive = s.Sources.Any(a => !a.IsDisabled && !a.IsUninstalled),
                 HasUnknown = s.Sources.Any(a => a.IsUnknown),

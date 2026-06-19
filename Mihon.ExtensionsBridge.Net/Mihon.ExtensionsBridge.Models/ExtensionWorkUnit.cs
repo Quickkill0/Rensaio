@@ -5,8 +5,8 @@ namespace Mihon.ExtensionsBridge.Models
 {
     public class ExtensionWorkUnit
     {
-        public required ITemporaryDirectory WorkingFolder { get; set; }
-        public required RepositoryEntry Entry { get; set; }
+        public ITemporaryDirectory WorkingFolder { get; set; }
+        public RepositoryEntry Entry { get; set; }
     }
 
 }

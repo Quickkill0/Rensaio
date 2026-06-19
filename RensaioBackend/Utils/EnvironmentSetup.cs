@@ -550,16 +550,23 @@ namespace RensaioBackend.Utils
             }
 
             string basePath;
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            if (OperatingSystem.IsMacOS())
             {
-                // For Windows, use the LocalApplicationData folder.
-                basePath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                // ~/Library/Application Support
+                basePath = Environment.GetFolderPath(
+                    Environment.SpecialFolder.ApplicationData);
+            }
+            else if (OperatingSystem.IsWindows())
+            {
+                // C:\Users\<user>\AppData\Local
+                basePath = Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData);
             }
             else
             {
-                // For macOS and Linux, use the .conf directory in the user's home folder.
-                basePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-                basePath = System.IO.Path.Combine(basePath, ".conf");
+                // Typically ~/.config on Linux
+                basePath = Environment.GetFolderPath(
+                    Environment.SpecialFolder.ApplicationData);
             }
             return VerifyIfRenameIsNeeded(basePath);
 

@@ -27,6 +27,12 @@ public class SeriesHealthDto : IThumb
     [JsonPropertyName("daysWithoutRelease")]
     public int? DaysWithoutRelease { get; set; }
 
+    /// <summary>
+    /// Release cadence in days (absolute value, always positive).
+    /// </summary>
+    [JsonPropertyName("releaseCadenceDays")]
+    public int? ReleaseCadenceDays { get; set; }
+
     [JsonPropertyName("providers")]
     public List<SmallProviderHealthDto> Providers { get; set; } = [];
 }
@@ -104,4 +110,14 @@ public class ClearAlertRequest
 
     [JsonPropertyName("targetId")]
     public Guid TargetId { get; set; }
+}
+
+public class SetCadenceRequest
+{
+    /// <summary>
+    /// Release cadence in days. Null = clear user override and let system recalculate.
+    /// The backend stores this as a negative value to mark it as user-set.
+    /// </summary>
+    [JsonPropertyName("cadenceDays")]
+    public int? CadenceDays { get; set; }
 }

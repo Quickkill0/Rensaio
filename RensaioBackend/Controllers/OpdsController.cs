@@ -498,7 +498,7 @@ public class OpdsController : ControllerBase
         var provider = series.Sources.FirstOrDefault(a => a.Chapters.Any(c => c.Filename != null && c.Filename.Equals(chapterFilename, StringComparison.OrdinalIgnoreCase)));
         var chapter = provider?.Chapters?.FirstOrDefault(c => c.Filename != null && c.Filename.Equals(chapterFilename, StringComparison.OrdinalIgnoreCase));
         string language = provider?.Language ?? "en";
-        decimal? chapterNumber = chapter?.ChapterNumber ?? -2;
+        decimal? chapterNumber = chapter.ChapterNumber;
 
 
         // Parse the incoming progression body

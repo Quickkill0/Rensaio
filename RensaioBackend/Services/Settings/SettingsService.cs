@@ -102,7 +102,7 @@ namespace RensaioBackend.Services.Settings
             return serializedSettings;
         }
 
-        private static (bool, EditableSettingsDto) Deserialize(List<SettingEntity> settings, EditableSettingsDto defaultValues) 
+        private static (bool, EditableSettingsDto) Deserialize(List<SettingEntity> settings, EditableSettingsDto defaultValues)
         {
             bool needSave = false;
             List<PropertyInfo> props = typeof(EditableSettingsDto).GetProperties().ToList();
@@ -121,13 +121,21 @@ namespace RensaioBackend.Services.Settings
                             value = string.Join('|', split);
                             break;
                         default:
-                            value = p.GetValue(defaultValues)?.ToString() ?? string.Empty;
+                            // Use InvariantCulture for numeric types to avoid culture-specific decimal separators
+                            object? defaultVal = p.GetValue(defaultValues);
+                            value = defaultVal switch
+                            {
+                                double d => d.ToString(CultureInfo.InvariantCulture),
+                                float f => f.ToString(CultureInfo.InvariantCulture),
+                                decimal m => m.ToString(CultureInfo.InvariantCulture),
+                                _ => defaultVal?.ToString() ?? string.Empty
+                            };
                             break;
                     }
 
                     setting = new SettingEntity
                     {
-                        Name = p.Name, 
+                        Name = p.Name,
                         Value = value
                     };
                     needSave = true;
@@ -136,13 +144,34 @@ namespace RensaioBackend.Services.Settings
                 switch (propType)
                 {
                     case "float":
-                        p.SetValue(newEditableSettings, float.TryParse(setting.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out float floatValue) ? floatValue : 0f);
+                        if (float.TryParse(setting.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out float floatValue))
+                            p.SetValue(newEditableSettings, floatValue);
+                        else {
+                            // Parse failed (e.g., corrupted value like "2,0" from culture bug).
+                            // Fall back to the default from appsettings.json and mark for save.
+                            p.SetValue(newEditableSettings, (float)(p.GetValue(defaultValues) ?? 0f));
+                            needSave = true;
+                        }
                         break;
                     case "double":
-                        p.SetValue(newEditableSettings, double.TryParse(setting.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double doubleValue) ? doubleValue : 0d);
+                        if (double.TryParse(setting.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double doubleValue))
+                            p.SetValue(newEditableSettings, doubleValue);
+                        else {
+                            // Parse failed (e.g., corrupted value like "2,0" from culture bug).
+                            // Fall back to the default from appsettings.json and mark for save.
+                            p.SetValue(newEditableSettings, (double)(p.GetValue(defaultValues) ?? 0d));
+                            needSave = true;
+                        }
                         break;
                     case "decimal":
-                        p.SetValue(newEditableSettings, decimal.TryParse(setting.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal decimalValue) ? decimalValue : 0m);
+                        if (decimal.TryParse(setting.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal decimalValue))
+                            p.SetValue(newEditableSettings, decimalValue);
+                        else {
+                            // Parse failed (e.g., corrupted value like "2,0" from culture bug).
+                            // Fall back to the default from appsettings.json and mark for save.
+                            p.SetValue(newEditableSettings, (decimal)(p.GetValue(defaultValues) ?? 0m));
+                            needSave = true;
+                        }
                         break;
                     case "string":
                         p.SetValue(newEditableSettings, setting.Value);
@@ -373,6 +402,31 @@ namespace RensaioBackend.Services.Settings
             set.StorageFolder = _config["StorageFolder"] ?? string.Empty;
             return set;
         }
+        /// <summary>
+        /// Validates and self-heals ReleaseCadenceMultiplier values.
+        /// If either multiplier is 0 (corrupted from culture-misparse), replaces it
+        /// with the default from appsettings.json (or code-level fallback of 2.0/5.0).
+        /// Returns true if any value was changed (caller should save).
+        /// </summary>
+        private static bool ValidateCadenceMultipliers(EditableSettingsDto settings, SettingsDto defaults)
+        {
+            bool changed = false;
+            double defaultYellow = defaults.ReleaseCadenceMultiplierYellow;
+            double defaultRed = defaults.ReleaseCadenceMultiplierRed;
+
+            if (settings.ReleaseCadenceMultiplierYellow <= 0d)
+            {
+                settings.ReleaseCadenceMultiplierYellow = defaultYellow > 0d ? defaultYellow : 2.0;
+                changed = true;
+            }
+            if (settings.ReleaseCadenceMultiplierRed <= 0d)
+            {
+                settings.ReleaseCadenceMultiplierRed = defaultRed > 0d ? defaultRed : 5.0;
+                changed = true;
+            }
+            return changed;
+        }
+
         public async ValueTask<SettingsDto> GetSettingsAsync(CancellationToken token = default)
         {
             if (_settings != null)
@@ -389,6 +443,14 @@ namespace RensaioBackend.Services.Settings
             else
             {
                 (needSave, EditableSettingsDto set) = Deserialize(settings, firstTimeEditableSettings);
+
+                // Validate cadence multipliers: if they're 0 (corrupted from culture-misparse),
+                // restore from defaults and mark for re-save to heal the DB.
+                if (ValidateCadenceMultipliers(set, firstTimeEditableSettings))
+                {
+                    needSave = true;
+                }
+
                 _settings = GetFromEditableSettings(set);
             }
             if (needSave)

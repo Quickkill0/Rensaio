@@ -116,11 +116,12 @@ public class StatusEvaluationService
             return;
         }
 
-        // Use stored cadence if available, otherwise fall back to default
+        // Use stored cadence if available, otherwise fall back to default.
+        // ReleaseCadenceDays may be negative (user-set) — use Math.Abs to get the actual value.
         double estimatedCadenceDays;
-        if (series.ReleaseCadenceDays.HasValue && series.ReleaseCadenceDays.Value > 0)
+        if (series.ReleaseCadenceDays.HasValue && series.ReleaseCadenceDays.Value != 0)
         {
-            estimatedCadenceDays = series.ReleaseCadenceDays.Value;
+            estimatedCadenceDays = Math.Abs((double)series.ReleaseCadenceDays.Value);
         }
         else
         {
@@ -128,6 +129,22 @@ public class StatusEvaluationService
         }
 
         double daysSinceLastChapter = (DateTime.UtcNow - series.LastChapterDate.Value).TotalDays;
+
+        // Diagnostic logging for debugging threshold issues
+        _logger.LogDebug(
+            "Evaluating series {SeriesId}: cadence={Cadence:F1}d, daysSince={Days:F1}d, multYellow={Yellow}, multRed={Red}",
+            series.Id, estimatedCadenceDays, daysSinceLastChapter,
+            settings.ReleaseCadenceMultiplierYellow, settings.ReleaseCadenceMultiplierRed);
+
+        // Safety guard: skip alert creation if multipliers are zero or negative.
+        // This prevents false positives when settings are corrupted or culture-misparsed.
+        if (settings.ReleaseCadenceMultiplierYellow <= 0d || settings.ReleaseCadenceMultiplierRed <= 0d)
+        {
+            _logger.LogWarning(
+                "Series {SeriesId} has invalid release cadence multipliers (Yellow: {Y}, Red: {R}), skipping alert evaluation",
+                series.Id, settings.ReleaseCadenceMultiplierYellow, settings.ReleaseCadenceMultiplierRed);
+            return;
+        }
 
         // Check if the alert was recently dismissed (suppression period = one cadence cycle).
         // When the user dismisses an alert, we honor that decision and won't recreate it

@@ -2,7 +2,7 @@
 
 import { useSearchParams, useRouter } from "next/navigation";
 import { useState, useEffect, useMemo, memo, useRef, Suspense } from "react";
-import { useSeriesById, useSetProviderMatch, useDeleteSeries, useUpdateSeries, useVerifyIntegrity, useCleanupSeries } from "@/lib/api/hooks/useSeries";
+import { useSeriesById, useSetProviderMatch, useDeleteSeries, useUpdateSeries, useVerifyIntegrity, useCleanupSeries, useSetSeriesCadence } from "@/lib/api/hooks/useSeries";
 import { useDownloadsForSeries } from "@/lib/api/hooks/useDownloads";
 import { seriesService } from "@/lib/api/services/seriesService";
 import { useQueryClient } from '@tanstack/react-query';
@@ -22,7 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Download, Plus, Power, Search, Trash2, Pause, Play, ExternalLink, ShieldCheck, AlertTriangle, CheckCircle, Clock, Calendar } from "lucide-react";
+import { Download, Plus, Power, Search, Trash2, Pause, Play, ExternalLink, ShieldCheck, AlertTriangle, CheckCircle, Clock, Calendar, Edit } from "lucide-react";
 import Image from 'next/image';
 import { SeriesStatus, QueueStatus, ArchiveResult, type ProviderExtendedInfo, type DownloadInfo, type ProviderMatch, type ExistingSource, type SeriesExtendedInfo, type SeriesIntegrityResult, type ArchiveIntegrityResult } from "@/lib/api/types";
 import { useSeriesContext } from "@/contexts/series-context";
@@ -752,6 +752,7 @@ function SeriesPageContent() {
   const updateSeriesMutation = useUpdateSeries();
   const verifyIntegrity = useVerifyIntegrity();
   const cleanupSeries = useCleanupSeries();
+  const setCadenceMutation = useSetSeriesCadence();
   
   // Provider switch state management
   const [providerSwitches, setProviderSwitches] = useState<Record<string, { useTitle: boolean; useCover: boolean; useStorage: boolean }>>({});

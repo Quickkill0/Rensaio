@@ -1,3 +1,4 @@
+using RensaioBackend.Data;
 using RensaioBackend.Models.Database;
 using RensaioBackend.Models.Dto;
 using RensaioBackend.Models.Enums;
@@ -6,7 +7,10 @@ using RensaioBackend.Services.Images;
 using RensaioBackend.Services.Jobs;
 using RensaioBackend.Services.Providers;
 using RensaioBackend.Services.Series;
+using RensaioBackend.Services.Settings;
+using RensaioBackend.Services.Status;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace RensaioBackend.Controllers
 {
@@ -21,6 +25,9 @@ namespace RensaioBackend.Controllers
         private readonly SeriesArchiveService _archiveService;
         private readonly ThumbCacheService _thumb;
         private readonly JobManagementService _jobManagementService;
+        private readonly AppDbContext _db;
+        private readonly StatusEvaluationService _statusEvaluation;
+        private readonly SettingsService _settings;
 
         public SeriesController(ILogger<SeriesController> logger,
             SeriesQueryService queryService,
@@ -28,7 +35,10 @@ namespace RensaioBackend.Controllers
             SeriesProviderService providerService,
             SeriesArchiveService archiveService,
             ThumbCacheService thumbCacheService,
-            JobManagementService jobManagementService)
+            JobManagementService jobManagementService,
+            AppDbContext db,
+            StatusEvaluationService statusEvaluation,
+            SettingsService settings)
         {
             _logger = logger;
             _queryService = queryService;
@@ -37,6 +47,9 @@ namespace RensaioBackend.Controllers
             _archiveService = archiveService;
             _thumb = thumbCacheService;
             _jobManagementService = jobManagementService;
+            _db = db;
+            _statusEvaluation = statusEvaluation;
+            _settings = settings;
         }
 
         /// <summary>
@@ -298,6 +311,69 @@ namespace RensaioBackend.Controllers
             {
                 _logger.LogError(ex, "Error deleting series: {Message}", ex.Message);
                 return StatusCode(500, $"Error updating series with id {id}");
+            }
+        }
+        /// <summary>
+        /// Sets the release cadence for a series (user override).
+        /// Stores as a negative value to indicate user-set, preventing auto-recalculation.
+        /// Re-evaluates health alerts after updating the cadence.
+        /// </summary>
+        [HttpPatch("{id}/cadence")]
+        [RequireUserLevel(UserLevel.Manager)]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(500)]
+        public async Task<IActionResult> SetSeriesCadenceAsync(Guid id, [FromBody] SetCadenceRequest request, CancellationToken token = default)
+        {
+            try
+            {
+                var series = await _db.Series.FirstOrDefaultAsync(s => s.Id == id, token).ConfigureAwait(false);
+                if (series == null)
+                    return NotFound(new { error = "Series not found" });
+
+                if (request.CadenceDays.HasValue)
+                {
+                    if (request.CadenceDays.Value <= 0)
+                        return BadRequest(new { error = "Cadence must be greater than zero" });
+
+                    // Store as negative to mark user-set (system will not auto-recalculate)
+                    series.ReleaseCadenceDays = -Math.Abs(request.CadenceDays.Value);
+                }
+                else
+                {
+                    // Clear user override — allow system to recalculate
+                    series.ReleaseCadenceDays = null;
+                }
+
+                await _db.SaveChangesAsync(token).ConfigureAwait(false);
+
+                // Re-evaluate health alerts for this series with the new cadence
+                var settings = await _settings.GetSettingsAsync(token).ConfigureAwait(false);
+                // We need to load the series with its Sources for evaluation
+                var seriesWithSources = await _db.Series
+                    .Include(s => s.Sources)
+                    .FirstOrDefaultAsync(s => s.Id == id, token)
+                    .ConfigureAwait(false);
+
+                if (seriesWithSources != null)
+                {
+                    await _statusEvaluation.EvaluateSingleSeriesAsync(seriesWithSources, settings, token).ConfigureAwait(false);
+                }
+
+                return Ok(new
+                {
+                    releaseCadenceDays = series.ReleaseCadenceDays.HasValue
+                        ? (int?)Math.Abs(series.ReleaseCadenceDays.Value)
+                        : null,
+                    isUserSet = series.ReleaseCadenceDays.HasValue && series.ReleaseCadenceDays.Value < 0,
+                    message = "Cadence updated successfully"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error setting cadence for series {SeriesId}: {Message}", id, ex.Message);
+                return StatusCode(500, new { error = ex.Message });
             }
         }
     }

@@ -16,7 +16,7 @@ public class BaseSeriesDto : IThumb
     [JsonPropertyName("title")]
     public string Title { get; set; } = string.Empty;
     [JsonPropertyName("thumbnailUrl")]
-    public string? ThumbnailUrl { get; set; }
+    public string ThumbnailUrl { get; set; } = string.Empty;
     [JsonPropertyName("artist")]
     public string Artist { get; set; } = string.Empty;
     [JsonPropertyName("author")]
@@ -57,4 +57,11 @@ public class BaseSeriesDto : IThumb
 
     [JsonPropertyName("startFromChapter")]
     public decimal? StartFromChapter { get; set; }
+
+    /// <summary>
+    /// Release cadence in days (absolute value, always positive for display).
+    /// Null = not yet determined. Negative in DB indicates user-set, positive = system-calculated.
+    /// </summary>
+    [JsonPropertyName("releaseCadenceDays")]
+    public int? ReleaseCadenceDays { get; set; }
 }

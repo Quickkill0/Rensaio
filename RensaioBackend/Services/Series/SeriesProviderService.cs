@@ -216,8 +216,8 @@ namespace RensaioBackend.Services.Series
                         }
                     }
                 }
-                if (ch!=null)
-                    unknown.Chapters.Remove(ch);
+                
+                unknown.Chapters.Remove(ch);
                 update = true;
             }
 
@@ -285,8 +285,6 @@ namespace RensaioBackend.Services.Series
             
             foreach (LatestSerieEntity l in latest)
             {
-                if (l.MihonId == null)
-                    continue;
                 if (deletedList.Contains(l.MihonId))
                 {
                     l.InLibrary = InLibraryStatus.NotInLibrary;

@@ -68,6 +68,9 @@ public class StatusController : ControllerBase
                     Message = alert.Message,
                     LastChapterDate = s.LastChapterDate,
                     DaysWithoutRelease = daysWithoutRelease,
+                    ReleaseCadenceDays = s.ReleaseCadenceDays.HasValue
+                        ? (int?)Math.Abs(s.ReleaseCadenceDays.Value)
+                        : null,
                     Providers = s.Sources
                         .Where(sp => !sp.IsUnknown)
                         .Select(sp => new SmallProviderHealthDto
@@ -168,6 +171,9 @@ public class StatusController : ControllerBase
                             LastChapterDate = parentSeries.LastChapterDate,
                             DaysWithoutRelease = parentSeries.LastChapterDate.HasValue
                                 ? (int?)(DateTime.UtcNow - parentSeries.LastChapterDate.Value).TotalDays
+                                : null,
+                            ReleaseCadenceDays = parentSeries.ReleaseCadenceDays.HasValue
+                                ? (int?)Math.Abs(parentSeries.ReleaseCadenceDays.Value)
                                 : null
                         });
                     }

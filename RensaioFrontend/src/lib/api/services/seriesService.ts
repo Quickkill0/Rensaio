@@ -110,4 +110,16 @@ export const seriesService = {
   async updateAllSeries(): Promise<void> {
     return apiClient.post<void>('/api/serie/update-all', {});
   },
+
+  /**
+   * Set the release cadence for a series (user override).
+   * Stores as negative to prevent auto-recalculation.
+   * Null cadenceDays = clear user override.
+   */
+  async setCadence(seriesId: string, cadenceDays: number | null): Promise<{ releaseCadenceDays: number | null; isUserSet: boolean }> {
+    return apiClient.patch<{ releaseCadenceDays: number | null; isUserSet: boolean }>(
+      `/api/serie/${seriesId}/cadence`,
+      { cadenceDays } as any
+    );
+  },
 };

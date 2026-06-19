@@ -172,6 +172,24 @@ export const useCleanupSeries = () => {
 };
 
 /**
+ * Hook to set the release cadence for a series (user override).
+ * Invalidates both the series detail and status queries.
+ */
+export const useSetSeriesCadence = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ seriesId, cadenceDays }: { seriesId: string; cadenceDays: number | null }) =>
+      seriesService.setCadence(seriesId, cadenceDays),
+    onSuccess: (_, { seriesId }) => {
+      void queryClient.invalidateQueries({ queryKey: ['series', 'detail', seriesId] });
+      void queryClient.invalidateQueries({ queryKey: ['series', 'library'] });
+      void queryClient.invalidateQueries({ queryKey: ['status'] });
+    },
+  });
+};
+
+/**
  * Hook to update all series naming, filenames and ComicInfo.xml
  */
 export const useUpdateAllSeries = () => {

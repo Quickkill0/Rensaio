@@ -128,6 +128,8 @@ export interface SeriesHealth {
   message: string;
   lastChapterDate?: string;
   daysWithoutRelease?: number;
+  /// Release cadence in days (absolute value, always positive)
+  releaseCadenceDays?: number;
   providers: SmallProviderHealth[];
 }
 
@@ -161,6 +163,11 @@ export interface StatusSummary {
 export interface ClearAlertRequest {
   targetType: HealthStatusTargetType;
   targetId: string;
+}
+
+export interface SetCadenceRequest {
+  /// Cadence in days. Null = clear user override and let system recalculate.
+  cadenceDays?: number | null;
 }
 
 export enum NsfwVisibility {
@@ -404,6 +411,8 @@ export interface BaseSeriesInfo {
   hasUnknown: boolean;
   pausedDownloads: boolean;
   startFromChapter?: number;
+  /// Release cadence in days (absolute value, always positive). Null = not yet determined.
+  releaseCadenceDays?: number;
 }
 
 export interface SeriesInfo extends BaseSeriesInfo {

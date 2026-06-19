@@ -46,6 +46,21 @@ public class CadenceCalculationService
     {
         try
         {
+            // Step 0: Check if the user has manually set the cadence (indicated by negative value).
+            // If so, skip auto-recalculation to preserve the user's preference.
+            var existingSeries = await _db.Series
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == seriesId, token)
+                .ConfigureAwait(false);
+
+            if (existingSeries?.ReleaseCadenceDays.HasValue == true && existingSeries.ReleaseCadenceDays.Value < 0)
+            {
+                _logger.LogDebug(
+                    "Series {SeriesId} has user-defined cadence ({Cadence} days), skipping auto-recalculation",
+                    seriesId, Math.Abs(existingSeries.ReleaseCadenceDays.Value));
+                return Math.Abs(existingSeries.ReleaseCadenceDays.Value);
+            }
+
             // Step 1: Get download history from queue (primary source)
             List<DateTime> rawDates;
 

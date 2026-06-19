@@ -107,15 +107,13 @@ namespace Mihon.ExtensionsBridge.Test
 
            // RepositoryGroup grp = await _extManager.AddExtensionAsync(data);
             var n = list[0].Extensions.FirstOrDefault(a => a.Name.Contains("ReadComicOnline"));
-            if (n == null)
-                return;
-            RepositoryGroup? grp = await _extManager.AddExtensionAsync(n);
+            RepositoryGroup grp = await _extManager.AddExtensionAsync(n);
             if (grp!=null)
             {
                 IExtensionInterop extension = await _extManager.GetInteropAsync(grp);
                 List<ISourceInterop> sources = extension.Sources;
                 var prefs = await extension.LoadPreferencesAsync(cancellationToken);
-                prefs[0].Preference!.CurrentValue = "https://plainraw.com/raw/7388602029b1";
+                prefs[0].Preference.CurrentValue = "https://plainraw.com/raw/7388602029b1";
                 await extension.SavePreferencesAsync(prefs, cancellationToken);
                 prefs = await extension.LoadPreferencesAsync(cancellationToken);
                 ISourceInterop source = sources.FirstOrDefault()!;

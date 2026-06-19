@@ -20,13 +20,14 @@ using Microsoft.Extensions.Configuration;
 using RensaioBackend.Utils;
 using RensaioTray.Utils;
 using RensaioTray.Views;
+using java.awt;
 
 namespace RensaioTray;
 
 public partial class App : Application
 {
     private IHost? _host;
-    private TrayIcon? _trayIcon;
+    private Avalonia.Controls.TrayIcon? _trayIcon;
 
     private IntPtr _consoleWindow = IntPtr.Zero;
     private bool _isShuttingDown = false;
@@ -178,12 +179,7 @@ public partial class App : Application
             // 3) Clean up UI resources on the UI thread to let the event loop exit
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                {
-                    // macOS: clear the Dock context menu
-                    MacOsTrayInterop.ClearDockMenu();
-                }
-                else if (_trayIcon != null)
+                if (_trayIcon != null)
                 {
                     // Windows / Linux: dispose the Avalonia TrayIcon
                     _trayIcon.IsVisible = false;
@@ -202,25 +198,11 @@ public partial class App : Application
     {
         try
         {
-            // ── macOS: use native Objective-C interop ────────────────────
-            // Avalonia 12.0.4's NativeMenu→NSMenu bridge is broken on macOS,
-            // so we bypass it entirely and create a native NSStatusItem +
-            // NSMenu via direct Objective-C runtime calls.
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            {
-                // macOS: populate the Dock icon's context menu via native interop
-                // Avalonia's NativeMenu→NSMenu bridge is broken on macOS 12.0.4
-                MacOsTrayInterop.SetDockMenu(new[]
-                {
-                    ("Open App in the Browser", new Action(OpenAppInBrowser)),
-                    ("Show Console", new Action(ConsoleItem_Click_Mac)),
-                    ("Exit", new Action(ExitApplication)),
-                });
-                return;
-            }
+
+
 
             // ── Windows / Linux: use Avalonia's TrayIcon with NativeMenu ─
-            var trayIcon = new TrayIcon();
+            var trayIcon = new Avalonia.Controls.TrayIcon();
 
             try
             {
@@ -261,6 +243,10 @@ public partial class App : Application
 
             trayIcon.Menu = menu;
             trayIcon.IsVisible = true;
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                NativeDock.SetMenu(this, menu);
+            }
             _trayIcon = trayIcon;
         }
         catch (Exception ex)
@@ -312,6 +298,7 @@ public partial class App : Application
 
     private void ConsoleItem_Click(object? sender, EventArgs e)
     {
+        Console.WriteLine($"ConsoleItem_Click invoked on {RuntimeInformation.OSDescription}");
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             ToggleConsoleVisibility();
@@ -357,21 +344,73 @@ public partial class App : Application
     {
         try
         {
-            var configuration = _host?.Services.GetService<IConfiguration>();
-            var logPath = configuration?.GetValue<string>("Serilog:WriteTo:0:Args:path", "logs/log-.txt");
+            var logDir = System.IO.Path.Combine(EnvironmentSetup.Path, "logs");
+            Console.WriteLine($"[ShowConsoleAlternative] logDir resolved to: {logDir}");
+            string? latestLogPath = null;
+
+            if (System.IO.Directory.Exists(logDir))
+            {
+                Console.WriteLine($"[ShowConsoleAlternative] logDir exists, scanning for log files...");
+                var latestLog = new System.IO.DirectoryInfo(logDir)
+                    .GetFiles("log-*.txt")
+                    .OrderByDescending(f => f.LastWriteTime)
+                    .FirstOrDefault();
+
+                if (latestLog != null)
+                {
+                    latestLogPath = latestLog.FullName;
+                    Console.WriteLine($"[ShowConsoleAlternative] Found latest log: {latestLogPath}");
+                }
+                else
+                {
+                    Console.WriteLine($"[ShowConsoleAlternative] No log-*.txt files found in {logDir}");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"[ShowConsoleAlternative] logDir does not exist: {logDir}");
+            }
+
+            Console.WriteLine($"[ShowConsoleAlternative] Platform: {RuntimeInformation.OSDescription}, latestLogPath: {latestLogPath ?? "null"}");
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                Process.Start("x-terminal-emulator", $"-e tail -f {logPath}");
+                var logPath = latestLogPath ?? "logs/log-.txt";
+                Console.WriteLine($"[ShowConsoleAlternative] Linux: starting x-terminal-emulator with tail -f '{logPath}'");
+                Process.Start("x-terminal-emulator", $"-e tail -f '{logPath}'");
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
-                Process.Start("open", $"-a Terminal -n");
+                if (latestLogPath != null)
+                {
+                    // Use ProcessStartInfo with ArgumentList to avoid shell argument splitting issues
+                    Console.WriteLine($"[ShowConsoleAlternative] macOS: starting osascript with tail -f on {latestLogPath}");
+                    var psi = new ProcessStartInfo("osascript")
+                    {
+                        ArgumentList = { "-e", $"tell app \"Terminal\" to do script \"tail -f '{latestLogPath}'\"" }
+                    };
+                    Process.Start(psi);
+                }
+                else if (System.IO.Directory.Exists(logDir))
+                {
+                    Console.WriteLine($"[ShowConsoleAlternative] macOS fallback: opening Terminal at {logDir}");
+                    // Use ArgumentList to handle paths with spaces correctly
+                    var psi = new ProcessStartInfo("open")
+                    {
+                        ArgumentList = { "-a", "Terminal", logDir }
+                    };
+                    Process.Start(psi);
+                }
+                else
+                {
+                    Console.WriteLine($"[ShowConsoleAlternative] macOS last resort: opening blank Terminal");
+                    Process.Start("open", "-a Terminal -n");
+                }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently fail
+            Console.WriteLine($"[ShowConsoleAlternative] ERROR: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
