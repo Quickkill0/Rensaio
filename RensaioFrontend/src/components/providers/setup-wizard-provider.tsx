@@ -227,16 +227,17 @@ export function SetupWizardProvider({ children }: { children: React.ReactNode })
   const getStepData = (stepIndex: number): unknown => {
     return wizardState.stepData[stepIndex];
   };
-  const minimizeWizard = () => {
-    setWizardState(prev => ({ ...prev, minimized: true }));
-  };
-  const reopenWizard = () => {
-    setWizardState(prev => ({ ...prev, minimized: false }));
-  };
+  // First-time setup is mandatory and cannot be minimized or dismissed, so these are no-ops.
+  // They're kept only for interface compatibility with existing consumers.
+  const minimizeWizard = () => {};
+  const reopenWizard = () => {};
   const contextValue: SetupWizardContextType = {
-    // The dialog is only shown when the session is active AND not minimized.
-    isWizardActive: wizardState.isActive && !wizardState.minimized,
-    isWizardMinimized: wizardState.isActive && wizardState.minimized,
+    // The wizard is modal and non-dismissable during first-time setup: it's shown whenever
+    // there is an active (incomplete) setup session and can never be minimized/hidden. A stale
+    // `minimized: true` left in localStorage by an older build is deliberately ignored here so
+    // the wizard always reappears until setup is actually completed (no limbo state).
+    isWizardActive: wizardState.isActive,
+    isWizardMinimized: false,
     currentStep: wizardState.currentStep,
     totalSteps: TOTAL_STEPS,
     isLoading: settingsLoading,
