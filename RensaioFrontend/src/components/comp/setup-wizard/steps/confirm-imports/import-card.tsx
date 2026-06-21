@@ -219,8 +219,13 @@ export const ImportCard = React.memo(
 
     return (
       <div className="iw-import-card">
-        {/* Card header: poster + title/path + action cluster */}
-        <div className="iw-card-head">
+        {/* Card header: poster + title/path + action cluster.
+            Not-matched items have no preferred series → no thumbnail, so the
+            poster element is omitted. Drop the fixed poster grid column in that
+            case (via --no-poster) so the title doesn't fall into the 64px slot. */}
+        <div
+          className={`iw-card-head${thumbnailSrc ? "" : " iw-card-head--no-poster"}`}
+        >
           {/* Poster */}
           {thumbnailSrc && (
             <div className="iw-card-poster">

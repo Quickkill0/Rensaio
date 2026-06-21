@@ -159,19 +159,21 @@ export function UserAvatarDropdown({ size = "md" }: { size?: "sm" | "md" }) {
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="end" className="w-60">
-          {/* User info */}
+          {/* User info — username left, role badge inline on the right */}
           <div className="px-3 py-2 border-b border-border mb-1">
-            <p className="text-sm font-medium text-foreground truncate">
-              {user.username}
-            </p>
-            <span
-              className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                LEVEL_BADGE[user.level] ?? LEVEL_BADGE[UserLevel.User]
-              }`}
-            >
-              <Medal className="h-3 w-3" />
-              {LEVEL_LABEL[user.level] ?? "User"}
-            </span>
+            <div className="flex items-center justify-between gap-2">
+              <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                {user.username}
+              </p>
+              <span
+                className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                  LEVEL_BADGE[user.level] ?? LEVEL_BADGE[UserLevel.User]
+                }`}
+              >
+                <Medal className="h-3 w-3" />
+                {LEVEL_LABEL[user.level] ?? "User"}
+              </span>
+            </div>
           </div>
 
           {/* OPDS path — info row with copy-to-clipboard of the full URL */}
