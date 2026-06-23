@@ -72,10 +72,10 @@ function calculateItemsPerPage(cardWidth: string): number {
 
 // Session storage keys for the cloud-latest page.
 const SESSION_KEYS = {
-  sourceId: "kzk_cloud_sourceId",
-  cardWidth: "kzk_cloud_cardWidth",
-  search: "kzk_cloud_search",
-  genres: "kzk_cloud_genres",
+  sourceId: "ren_cloud_sourceId",
+  cardWidth: "ren_cloud_cardWidth",
+  search: "ren_cloud_search",
+  genres: "ren_cloud_genres",
 };
 
 // Read a value from sessionStorage, returning fallback when absent or empty.

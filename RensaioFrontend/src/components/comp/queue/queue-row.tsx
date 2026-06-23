@@ -100,7 +100,7 @@ const Thumbnail = memo(function Thumbnail({ src, alt }: ThumbnailProps) {
         height={36}
         className="object-cover w-full h-full"
         onError={(e) => {
-          (e.target as HTMLImageElement).src = '/kaizoku.net.png';
+          (e.target as HTMLImageElement).src = '/rensaio.png';
         }}
       />
       {/* subtle inset shadow to show image boundary */}

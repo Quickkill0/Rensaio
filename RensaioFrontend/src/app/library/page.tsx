@@ -24,12 +24,12 @@ import { getResponsiveCardDefault } from "@/lib/utils/responsive-card-default";
 
 // Session storage keys for the library page.
 const SESSION_KEYS = {
-  tab: "kzk_tab",
-  genre: "kzk_genre",
-  provider: "kzk_provider",
-  category: "kzk_category",
-  orderBy: "kzk_orderBy",
-  cardWidth: "kzk_cardWidth",
+  tab: "ren_tab",
+  genre: "ren_genre",
+  provider: "ren_provider",
+  category: "ren_category",
+  orderBy: "ren_orderBy",
+  cardWidth: "ren_cardWidth",
 };
 
 // Read a value from sessionStorage, returning fallback when absent or empty.

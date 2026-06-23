@@ -35,6 +35,7 @@ import { Search, X, Plus } from "lucide-react";
 import { SearchSeriesRequester } from "@/components/comp/setup-wizard/search-series-requester";
 import type { ImportInfo, SmallSeries } from "@/lib/api/types";
 import { ImportStatus, Action } from "@/lib/api/types";
+import { formatThumbnailUrl } from "@/lib/utils/thumbnail";
 import { MatchRow } from "./match-row";
 import { ImportsContext } from "./imports-context";
 
@@ -78,16 +79,14 @@ export const ImportCard = React.memo(
     const preferredSeries = importItem.series?.find(
       (s: SmallSeries) => s.preferred
     );
-    const thumbnailSrc = preferredSeries?.thumbnailUrl;
+    const thumbnailSrc = formatThumbnailUrl(preferredSeries?.thumbnailUrl);
 
-    const [imgSrc, setImgSrc] = React.useState<string>(
-      thumbnailSrc || "/kaizoku.net.png"
-    );
+    const [imgSrc, setImgSrc] = React.useState<string>(thumbnailSrc);
     React.useEffect(() => {
-      setImgSrc(thumbnailSrc || "/kaizoku.net.png");
+      setImgSrc(thumbnailSrc);
     }, [thumbnailSrc]);
     const handleImgError = useCallback(() => {
-      setImgSrc("/kaizoku.net.png");
+      setImgSrc("/rensaio.png");
     }, []);
 
     // Local chapter state (same pattern as original)

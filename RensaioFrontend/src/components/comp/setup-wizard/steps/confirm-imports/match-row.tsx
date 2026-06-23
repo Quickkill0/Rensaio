@@ -28,6 +28,7 @@ import ReactCountryFlag from "react-country-flag";
 import { ExternalLink } from "lucide-react";
 import { getCountryCodeForLanguage } from "@/lib/utils/language-country-mapping";
 import type { SmallSeries } from "@/lib/api/types";
+import { formatThumbnailUrl } from "@/lib/utils/thumbnail";
 import { ImportsContext } from "./imports-context";
 import { useCoverPopoverTriggerProps } from "./cover-popover";
 
@@ -96,18 +97,18 @@ export const MatchRow = React.memo(function MatchRow({
     onProviderToggle(importPath, seriesIndex);
   }, [importPath, seriesIndex, onProviderToggle]);
 
+  const formattedThumbUrl = formatThumbnailUrl(series.thumbnailUrl);
+
   // Cover popover trigger props
   const popoverTriggerProps = useCoverPopoverTriggerProps(
-    series.thumbnailUrl,
+    formattedThumbUrl,
     series.provider
   );
 
-  const [coverImgSrc, setCoverImgSrc] = React.useState(
-    series.thumbnailUrl || ""
-  );
+  const [coverImgSrc, setCoverImgSrc] = React.useState(formattedThumbUrl);
   React.useEffect(() => {
-    setCoverImgSrc(series.thumbnailUrl || "");
-  }, [series.thumbnailUrl]);
+    setCoverImgSrc(formattedThumbUrl);
+  }, [formattedThumbUrl]);
 
   const handleCoverImgError = useCallback(() => {
     setCoverImgSrc("");

@@ -23,7 +23,7 @@ function hashPackage(pkg: string): number {
   return Math.abs(h) % 12;
 }
 
-const FALLBACK_SRC = '/kaizoku.net.png';
+const FALLBACK_SRC = '/rensaio.png';
 
 export function SourceThumb({ extension, size }: SourceThumbProps) {
   const [imageError, setImageError] = useState(false);

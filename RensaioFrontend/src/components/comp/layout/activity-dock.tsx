@@ -18,8 +18,9 @@ import { Button } from "@/components/ui/button";
 import { usePermission } from "@/hooks/use-permission";
 import { useDownloadProgress } from "@/lib/api/hooks/useQueue";
 import { ProgressStatus } from "@/lib/api/types";
+import { formatThumbnailUrl } from "@/lib/utils/thumbnail";
 
-const DOCK_DISMISSED_KEY = "kzk_dock_dismissed";
+const DOCK_DISMISSED_KEY = "ren_dock_dismissed";
 
 /**
  * Activity Dock.
@@ -205,7 +206,7 @@ function DockRow({
       <div className="relative h-12 w-9 shrink-0 overflow-hidden rounded-md bg-muted">
         {card.thumbnailUrl ? (
           <Image
-            src={card.thumbnailUrl}
+            src={formatThumbnailUrl(card.thumbnailUrl)}
             alt=""
             fill
             sizes="36px"
@@ -304,7 +305,7 @@ function DockItem({
       <div className="relative h-10 w-7.5 shrink-0 overflow-hidden rounded bg-muted">
         {card.thumbnailUrl ? (
           <Image
-            src={card.thumbnailUrl}
+            src={formatThumbnailUrl(card.thumbnailUrl)}
             alt=""
             fill
             sizes="30px"

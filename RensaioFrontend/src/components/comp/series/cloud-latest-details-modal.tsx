@@ -115,8 +115,8 @@ export const CloudLatestDetailsModal: React.FC<CloudLatestDetailsModalProps> = (
                   className="object-cover"
                   onError={(e) => {
                     const target = e.target as HTMLImageElement;
-                    if (target.src !== window.location.origin + '/kaizoku.net.png') {
-                      target.src = '/kaizoku.net.png';
+                    if (target.src !== window.location.origin + '/rensaio.png') {
+                      target.src = '/rensaio.png';
                     }
                   }}
                 />
@@ -228,8 +228,8 @@ export const CloudLatestDetailsModal: React.FC<CloudLatestDetailsModalProps> = (
                 className="object-cover"
                 onError={(e) => {
                   const target = e.target as HTMLImageElement;
-                  if (target.src !== window.location.origin + '/kaizoku.net.png') {
-                    target.src = '/kaizoku.net.png';
+                  if (target.src !== window.location.origin + '/rensaio.png') {
+                    target.src = '/rensaio.png';
                   }
                 }}
               />

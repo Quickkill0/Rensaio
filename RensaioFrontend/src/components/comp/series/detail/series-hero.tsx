@@ -192,8 +192,8 @@ export function SeriesHero({
               className="w-[130px] h-[195px] sm:w-[180px] sm:h-[270px] object-cover rounded-xl ring-1 ring-white/[0.06] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.7),0_0_80px_-20px_hsl(346.8_77.2%_49.8%/0.25)]"
               onError={(e) => {
                 const target = e.target as HTMLImageElement;
-                if (target.src !== window.location.origin + '/kaizoku.net.png') {
-                  target.src = '/kaizoku.net.png';
+                if (target.src !== window.location.origin + '/rensaio.png') {
+                  target.src = '/rensaio.png';
                 }
               }}
             />

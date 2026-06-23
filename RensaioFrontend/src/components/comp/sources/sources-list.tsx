@@ -324,19 +324,6 @@ export function SourcesList({
         </div>
       )}
 
-      {/* Filter toolbar (search lives in the global header bar, like Library/Browse) */}
-      <SourcesToolbar
-        hideNsfw={hideNsfw}
-        setHideNsfw={setHideNsfw}
-        selectedLanguages={selectedLanguages}
-        setSelectedLanguages={setSelectedLanguages}
-        availableLanguageOptions={availableLanguageOptions}
-        sort={sort}
-        setSort={setSort}
-        onInstallFromApk={handleApkButtonClick}
-        nsfwVisibility={nsfwVisibility}
-      />
-
       {/* Installed section */}
       {filteredInstalledExtensions.length > 0 && (
         <SourcesSection
@@ -366,6 +353,19 @@ export function SourcesList({
           ))}
         </SourcesSection>
       )}
+
+      {/* Filter toolbar — between Installed and Available, since filters apply only to Available */}
+      <SourcesToolbar
+        hideNsfw={hideNsfw}
+        setHideNsfw={setHideNsfw}
+        selectedLanguages={selectedLanguages}
+        setSelectedLanguages={setSelectedLanguages}
+        availableLanguageOptions={availableLanguageOptions}
+        sort={sort}
+        setSort={setSort}
+        onInstallFromApk={handleApkButtonClick}
+        nsfwVisibility={nsfwVisibility}
+      />
 
       {/* Available section */}
       {filteredAvailableExtensions.length > 0 && (

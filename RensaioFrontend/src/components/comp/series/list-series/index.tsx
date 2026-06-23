@@ -211,8 +211,8 @@ export function ListSeries({ filterFn, sortFn, cardWidth = "w-40", cardWidthOpti
                 className="rounded-md object-cover"
                 onError={(e) => {
                   const target = e.target as HTMLImageElement;
-                  if (target.src !== window.location.origin + '/kaizoku.net.png') {
-                    target.src = '/kaizoku.net.png';
+                  if (target.src !== window.location.origin + '/rensaio.png') {
+                    target.src = '/rensaio.png';
                   }
                 }}
               />
@@ -231,13 +231,13 @@ export function ListSeries({ filterFn, sortFn, cardWidth = "w-40", cardWidthOpti
               )}
 
               {/* Provider Badge - Top Left */}
-              <div className="absolute top-1 left-1 text-white text-xs font-semibold max-w-[70%] rounded shadow z-10">
-                <Badge
-                  variant="secondary"
-                  className="bg-black/70"
-                >
-                  {series.lastChangeProvider.provider}
-                </Badge>
+              <div className={`absolute top-1 left-1 text-white font-semibold rounded px-2 py-0.5 shadow z-10 bg-black/70 max-w-[70%] truncate ${
+                textSize === 'text-[0.4rem]' ? 'text-[0.4rem]' :
+                textSize === 'text-base' ? 'text-sm' :
+                textSize === 'text-lg' ? 'text-base' :
+                'text-xs'
+              }`}>
+                {series.lastChangeProvider.provider}
               </div>
 
               {/* Attention dot — bottom-left of cover when this series has
@@ -252,22 +252,47 @@ export function ListSeries({ filterFn, sortFn, cardWidth = "w-40", cardWidthOpti
                 </div>
               )}
 
-              {/* Paused indicator — bottom-left, just above the title strip,
-                  when downloads for this series are paused. Solid amber badge
-                  (matches the "Paused" status filter) reads far better against
-                  the cover art than the old muted-grey circle. */}
-              {series.pausedDownloads && !series.hasUnknown && (
-                <div
-                  className="absolute bottom-7 left-1 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-yellow-500 text-black shadow ring-2 ring-background"
-                  title="Downloads paused"
-                >
-                  <Pause className="h-2.5 w-2.5 fill-current" />
-                </div>
-              )}
-
               <div className={`absolute bottom-0 left-0 w-full bg-black/60 text-white font-semibold px-2 py-1 rounded-b-md flex items-center justify-center ${textSize}`}>
+                {/* Paused indicator — flush on top of title bar, right-aligned.
+                    Uses a negative top offset equal to the icon height so it
+                    sits just above the title strip regardless of how many lines
+                    the title wraps to. */}
+                {series.pausedDownloads && (
+                  <div
+                    className={`absolute right-1 z-10 flex items-center justify-center rounded-full bg-yellow-500 text-black shadow ring-2 ring-background ${
+                      textSize === 'text-[0.4rem]' ? 'h-3 w-3 -top-3.5' :
+                      textSize === 'text-xs' ? 'h-4 w-4 -top-4.5' :
+                      textSize === 'text-base' ? 'h-6 w-6 -top-6.5' :
+                      textSize === 'text-lg' ? 'h-7 w-7 -top-7.5' :
+                      'h-5 w-5 -top-5.5'
+                    }`}
+                    title="Downloads paused"
+                  >
+                    <Pause className={`fill-current ${
+                      textSize === 'text-[0.4rem]' ? 'h-1.5 w-1.5' :
+                      textSize === 'text-xs' ? 'h-2 w-2' :
+                      textSize === 'text-base' ? 'h-3 w-3' :
+                      textSize === 'text-lg' ? 'h-3.5 w-3.5' :
+                      'h-2.5 w-2.5'
+                    }`} />
+                  </div>
+                )}
                 {series.title}
               </div>
+
+            {/* Last Chapter Badge — inside the hover-scaled container so it
+                scales together with the other badges on hover. */}
+            {series.lastChapter !== undefined && (
+              <LastChapterBadge
+                lastChapter={series.lastChapter}
+                status={series.isActive ? series.status : SeriesStatus.DISABLED}
+                className={`${
+                  textSize === 'text-[0.4rem]' ? 'text-[0.4rem]' :
+                  textSize === 'text-base' ? 'text-sm' :
+                  textSize === 'text-lg' ? 'text-base' :
+                  'text-xs'
+                }`}
+              />)}
             </div>
           </TooltipTrigger>
               <TooltipContent side="right" className="max-w-xl min-w-[22rem] p-0 bg-card border shadow-lg">
@@ -341,11 +366,6 @@ export function ListSeries({ filterFn, sortFn, cardWidth = "w-40", cardWidthOpti
                   )}
                 </div>
               </TooltipContent>            </Tooltip>
-            {/* Last Chapter Badge */}            {series.lastChapter !== undefined && (
-              <LastChapterBadge
-                lastChapter={series.lastChapter}
-                status={series.isActive ? series.status : SeriesStatus.DISABLED}
-              />)}
           </div>
         );
       })}

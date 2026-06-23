@@ -248,9 +248,9 @@ export const ProviderCard = ({
               const target = e.target as HTMLImageElement;
               if (
                 target.src !==
-                window.location.origin + "/kaizoku.net.png"
+                window.location.origin + "/rensaio.png"
               ) {
-                target.src = "/kaizoku.net.png";
+                target.src = "/rensaio.png";
               }
             }}
           />

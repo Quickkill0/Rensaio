@@ -48,8 +48,8 @@ export function SearchSeriesStep({
 
   // Key for localStorage - make it unique for different modes
   const LOCAL_STORAGE_KEY = existingSources && existingSources.length > 0
-    ? 'kaizoku.selectedSources.addSources'
-    : 'kaizoku.selectedSources.addSeries';
+    ? 'rensaio.selectedSources.addSources'
+    : 'rensaio.selectedSources.addSeries';
 
   // Refs to track state and prevent race conditions
   const initializationState = React.useRef<{

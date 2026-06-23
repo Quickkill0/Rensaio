@@ -17,7 +17,7 @@ import { LazyImage } from "@/components/ui/lazy-image";
 import { ProviderSettingsButton } from "@/components/comp/provider-settings-button";
 import { ProviderPreferencesRequester } from "@/components/comp/provider-preferences-requester";
 import { useSettings } from "@/lib/api/hooks/useSettings";
-import { getApiConfig } from "@/lib/api/config";
+import { formatThumbnailUrl } from "@/lib/utils/thumbnail";
 
 interface ProviderCardProps {
   extension: Provider;
@@ -27,19 +27,6 @@ interface ProviderCardProps {
   isCompact?: boolean;
   showNsfwIndicator?: boolean;
 }
-const formatThumbnailUrl = (thumbnailUrl?: string): string => {
-  const config = getApiConfig();
-  if (!thumbnailUrl) {
-    return '/rensaio.png';
-  }
-  // If it already starts with http, return as is
-  if (thumbnailUrl.startsWith('http')) {
-    return thumbnailUrl;
-  }
-  
-  // Otherwise, prefix with base URL and API path
-  return `${config.baseUrl}${thumbnailUrl}`;
-};
 const getExtensionEntries = (extension: Provider): ExtensionEntry[] =>
   extension.onlineRepositories.flatMap((repo) => repo.entries);
 

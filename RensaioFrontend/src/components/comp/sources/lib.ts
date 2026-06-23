@@ -2,22 +2,11 @@
 // The typo is the source of truth; renaming it would cascade across the codebase
 // and is out of scope for this refactor.
 
-import { getApiConfig } from "@/lib/api/config";
+import { formatThumbnailUrl } from "@/lib/utils/thumbnail";
 import { type Provider, type ExtensionEntry } from "@/lib/api/types";
 
-export const formatThumbnailUrl = (thumbnailUrl?: string): string => {
-  const config = getApiConfig();
-  if (!thumbnailUrl) {
-    return '/kaizoku.net.png';
-  }
-  // If it already starts with http, return as is
-  if (thumbnailUrl.startsWith('http')) {
-    return thumbnailUrl;
-  }
-
-  // Otherwise, prefix with base URL and API path
-  return `${config.baseUrl}${thumbnailUrl}`;
-};
+// Re-export so callers importing from "./lib" (e.g. source-thumb.tsx) continue to work.
+export { formatThumbnailUrl };
 
 export const getExtensionEntries = (extension: Provider): ExtensionEntry[] =>
   extension.onlineRepositories.flatMap((repo) => repo.entries);
