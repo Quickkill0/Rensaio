@@ -64,3 +64,67 @@ test("input change serializes 12.5 without integer truncation and blank clears o
   input.props.onChange({ target: { value: "" } });
   assert.equal(state.originalAugmentedResponse.startChapter, undefined);
 });
+test("custom name and separate-entry controls default to backward-compatible choices", () => {
+  assert.match(html(), /id="display-name"[^>]*value=""/);
+  assert.match(html(), /aria-checked="false"[^>]*id="separate-instance"/);
+  assert.doesNotMatch(html(), /id="separate-storage-path"/);
+  const options = props();
+  options.formState = { ...options.formState, displayName: "Scratch [Italian]", createSeparateInstance: true, storagePath: "Scratch-Italian" };
+  const rendered = renderToStaticMarkup(React.createElement(ConfirmSeriesStep, options));
+  assert.match(rendered, /Scratch \[Italian\]/);
+  assert.match(rendered, /id="separate-storage-path"/);
+  assert.match(rendered, /will not merge with matching titles/);
+  assert.doesNotMatch(html(undefined, true), /id="display-name"|id="separate-instance"/);
+});
+test("unsafe custom-name characters and blank separate folder show validation errors", () => {
+  const options = props();
+  options.formState = { ...options.formState, displayName: "Scratch\nItalian", createSeparateInstance: true, storagePath: "" };
+  const rendered = renderToStaticMarkup(React.createElement(ConfirmSeriesStep, options));
+  assert.match(rendered, /without control characters/);
+  assert.match(rendered, /Enter a new storage folder/);
+});
+test("submit sends explicit separate intent, trims alias, retains fractional start, and removes existing id", async () => {
+  let payload;
+  const load = Module._load;
+  const mocks = {
+    "@/lib/api/hooks/useSeries": { useAddSeries: () => ({ isPending: false, mutateAsync: async (value) => { payload = value; return { id: "new" }; } }) },
+    "@/lib/api/hooks/useSearch": { useAugmentSeries: () => ({ isPending: false }) },
+    "@/hooks/use-toast": { useToast: () => ({ toast: noop }) },
+    "@tanstack/react-query": { useQueryClient: () => ({ invalidateQueries: async () => {} }) },
+    "@/components/comp/series/add-series/steps/search-series-step": { SearchSeriesStep: () => null },
+  };
+  Module._load = function (request, ...args) { return request in mocks ? mocks[request] : load.call(this, request, ...args); };
+  let AddSeriesSteps;
+  try { ({ AddSeriesSteps } = require(path.join(root, "components/comp/series/add-series/steps/index.tsx"))); }
+  finally { Module._load = load; }
+  const original = { useState: React.useState, useEffect: React.useEffect };
+  function submitTree(formState, isAddSourcesMode = false) {
+    let index = 0;
+    React.useState = (initial) => [index++ === 0 ? formState : index === 6 ? 1 : initial, noop];
+    React.useEffect = noop;
+    try { return AddSeriesSteps({ onFinish: noop, isAddSourcesMode, seriesId: isAddSourcesMode ? "existing" : undefined }); }
+    finally { Object.assign(React, original); }
+  }
+  function findSubmit(node) {
+    if (!node || typeof node !== "object") return undefined;
+    if (node.props?.className === "btn-primary") return node;
+    for (const child of React.Children.toArray(node.props?.children)) { const hit = findSubmit(child); if (hit) return hit; }
+  }
+  const state = { fullSeries: [source], allLinkedSeries: [], selectedLinkedSeries: [], storagePath: "Scratch-Italian", displayName: " Scratch [Italian] ", createSeparateInstance: true,
+    originalAugmentedResponse: { startChapter: 12.5, existingSeries: true, existingSeriesId: "old" } };
+  await findSubmit(submitTree(state)).props.onClick();
+  assert.equal(payload.startChapter, 12.5);
+  assert.equal(payload.displayName, "Scratch [Italian]");
+  assert.equal(payload.createSeparateInstance, true);
+  assert.equal(payload.existingSeries, false);
+  assert.equal(payload.existingSeriesId, undefined);
+  assert.equal(payload.storageFolderPath, "Scratch-Italian");
+  await findSubmit(submitTree({ ...state, createSeparateInstance: false, displayName: "" })).props.onClick();
+  assert.equal(payload.createSeparateInstance, undefined);
+  assert.equal(payload.displayName, undefined);
+  assert.equal(payload.existingSeriesId, "old");
+  await findSubmit(submitTree(state, true)).props.onClick();
+  assert.equal(payload.existingSeriesId, "existing");
+  assert.equal(payload.createSeparateInstance, undefined);
+  assert.equal(payload.displayName, undefined);
+});

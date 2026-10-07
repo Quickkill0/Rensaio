@@ -158,6 +158,9 @@ export function ConfirmSeriesStep({
   const [startChapterInput, setStartChapterInput] = React.useState(
     formState.originalAugmentedResponse?.startChapter?.toString() ?? "",
   );
+  const displayName = formState.displayName ?? "";
+  const displayNameIsValid = displayName.trim().length <= 250 && !/[\u0000-\u001f\u007f]/.test(displayName);
+  const separatePathIsValid = !formState.createSeparateInstance || Boolean(formState.storagePath?.trim());
   const startChapterIsValid = startChapterInput.trim() === "" ||
     (Number.isFinite(Number(startChapterInput)) && Number(startChapterInput) >= 0);
   const handleStartChapterChange = (value: string) => {
@@ -177,8 +180,8 @@ export function ConfirmSeriesStep({
     const hasSelectedSeries = validFullSeries.some(
       (series) => series.isSelected && !series.isUnselectable,
     );
-    setCanProgress(hasSelectedSeries && (isAddSourcesMode || startChapterIsValid));
-  }, [validFullSeries, setCanProgress, isAddSourcesMode, startChapterIsValid]);
+    setCanProgress(hasSelectedSeries && (isAddSourcesMode || (startChapterIsValid && displayNameIsValid && separatePathIsValid)));
+  }, [validFullSeries, setCanProgress, isAddSourcesMode, startChapterIsValid, displayNameIsValid, separatePathIsValid]);
 
   // ── Auto-initialize first selectable (verbatim) ───────────────────────────
   React.useEffect(() => {
@@ -273,9 +276,11 @@ export function ConfirmSeriesStep({
   const [selectedCategory, setSelectedCategory] = React.useState<string>("");
   const [editableStoragePath, setEditableStoragePath] = React.useState<string>("");
   const categoryManuallyChanged = React.useRef<boolean>(false);
+  const pathManuallyChanged = React.useRef(Boolean(formState.storagePath));
 
   const handleStoragePathChange = React.useCallback(
-    (newPath: string) => {
+    (newPath: string, manuallyChanged = true) => {
+      if (manuallyChanged) pathManuallyChanged.current = true;
       setEditableStoragePath(newPath);
       setFormState((prev: AddSeriesState) => ({ ...prev, storagePath: newPath }));
     },
@@ -340,7 +345,7 @@ export function ConfirmSeriesStep({
       setEditableStoragePath(formState.storagePath);
       return;
     }
-    if (!titleSeries || !baseStoragePath) return;
+    if (pathManuallyChanged.current || !titleSeries || !baseStoragePath) return;
 
     const separator = baseStoragePath.includes("\\") ? "\\" : "/";
     let computedPath: string;
@@ -350,7 +355,7 @@ export function ConfirmSeriesStep({
       computedPath = `${baseStoragePath}${separator}${titleSeries.suggestedFilename}`;
     }
     if (computedPath !== editableStoragePath) {
-      handleStoragePathChange(computedPath);
+      handleStoragePathChange(computedPath, false);
     }
   }, [
     titleSeries,
@@ -366,7 +371,7 @@ export function ConfirmSeriesStep({
   const [moreOptionsOpen, setMoreOptionsOpen] = React.useState(false);
 
   // ── Derived display values ────────────────────────────────────────────────
-  const displayTitle = titleSeries?.title ?? coverSeries?.title ?? "";
+  const displayTitle = displayName.trim() || titleSeries?.title || coverSeries?.title || "";
   const displayAuthor = coverSeries?.author ?? "";
   const displayArtist = coverSeries?.artist ?? "";
   const displayGenres = (coverSeries?.genre ?? []).slice(0, 4);
@@ -711,6 +716,59 @@ export function ConfirmSeriesStep({
                 Decimals such as 12.5 are supported. Leave blank to download all chapters.
               </p>
               {!startChapterIsValid && <p role="alert" className="mt-2 text-xs text-destructive">Enter a finite chapter number of 0 or greater.</p>}
+              <div className="mt-4 border-t border-border/40 pt-3">
+                <Label htmlFor="display-name" className="text-sm font-medium">Custom series name <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                <Input
+                  id="display-name"
+                  value={displayName}
+                  maxLength={250}
+                  onChange={(e) => setFormState((prev) => ({ ...prev, displayName: e.target.value }))}
+                  placeholder="For example: Berserk [Italian]"
+                  aria-describedby="display-name-help"
+                  aria-invalid={!displayNameIsValid}
+                  className="mt-2 bg-card"
+                />
+                <p id="display-name-help" className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                  Add a language or source tag to the library name and future archive names.
+                  A custom name is kept during source refreshes. Leave blank to use the selected title source.
+                </p>
+                {!displayNameIsValid && <p role="alert" className="mt-2 text-xs text-destructive">Use at most 250 characters, without control characters.</p>}
+              </div>
+              <div className="mt-4 border-t border-border/40 pt-3">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="separate-instance"
+                    checked={formState.createSeparateInstance ?? false}
+                    onCheckedChange={(checked) => setFormState((prev) => ({ ...prev, createSeparateInstance: checked }))}
+                    aria-describedby="separate-instance-help"
+                  />
+                  <Label htmlFor="separate-instance" className="cursor-pointer text-sm font-medium">Create a separate library entry</Label>
+                </div>
+                <p id="separate-instance-help" className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                  Off by default: matching titles join the existing series. Turn on for a separate
+                  language or source edition; the source selections above determine what it downloads.
+                </p>
+                {formState.createSeparateInstance && (
+                  <div className="mt-3 space-y-2">
+                    <Label htmlFor="separate-storage-path">New storage folder</Label>
+                    <Input
+                      id="separate-storage-path"
+                      value={editableStoragePath}
+                      onChange={(e) => handleStoragePathChange(e.target.value)}
+                      aria-describedby="separate-path-help"
+                      aria-invalid={!separatePathIsValid}
+                      className="bg-card"
+                      placeholder="Choose a new, unused folder"
+                    />
+                    <p id="separate-path-help" className="text-xs leading-relaxed text-muted-foreground">
+                      Choose a new, unused folder inside your storage root, such as Berserk-Italian.
+                      This entry will not merge with matching titles. The server rejects occupied or unsafe folders.
+                      A custom name does not automatically change this path.
+                    </p>
+                    {!separatePathIsValid && <p role="alert" className="text-xs text-destructive">Enter a new storage folder.</p>}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -733,7 +791,7 @@ export function ConfirmSeriesStep({
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 sm:items-end mt-3">
-                  <div className="flex-1 min-w-0">
+                  {!formState.createSeparateInstance && <div className="flex-1 min-w-0">
                     <Label htmlFor="storage-path" className="text-sm font-medium">
                       Storage Path
                     </Label>
@@ -744,7 +802,7 @@ export function ConfirmSeriesStep({
                       placeholder="Enter storage path..."
                       className="mt-1 bg-card text-xs sm:text-sm"
                     />
-                  </div>
+                  </div>}
                   {availableCategories.length > 0 && (
                     <div className="w-full sm:w-48">
                       <Label htmlFor="category-select" className="text-sm font-medium">
