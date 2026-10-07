@@ -696,7 +696,7 @@ export function ConfirmSeriesStep({
           </div>
 
           {!isAddSourcesMode && (
-            <div className="mt-4 rounded-lg border border-border/60 bg-card/50 p-3">
+            <div className="confirm-download-options mt-4 rounded-lg border p-3">
               <Label htmlFor="start-chapter" className="text-sm font-medium">Start at chapter</Label>
               <Input
                 id="start-chapter"
