@@ -131,8 +131,9 @@ It uses the power of  **MIHON extensions** to connect with multiple sources.
   source/language plus stable identity suffix are automatic. Existing unrelated
   files are never overwritten by custom names. **Keep `rensaio.json` beside custom
   archives for recovery**: filename-only recovery is not guaranteed. ComicInfo is
-  unchanged; the series Rename action deliberately restores canonical names. This
-  setting does not rename existing archives or customize their internal image names.
+  unchanged; the existing series Rename action skips custom archive names (it
+  recognizes canonical names only). This setting does not rename existing archives
+  or customize their internal image names.
 
 - 🧾 **ComicInfo.xml Injection**  
   Chapters include rich metadata from the original source.

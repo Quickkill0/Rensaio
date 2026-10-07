@@ -765,7 +765,7 @@ function StorageSection({
         {!!localSettings.chapterFilenameTemplate?.trim() && (
           <p id="chapter-filename-recovery" role="note" className="text-sm border-l-2 border-primary pl-3">
             Keep rensaio.json with your series: custom filenames cannot guarantee filename-only
-            recovery. ComicInfo metadata is preserved. The series Rename action restores canonical names.
+            recovery. ComicInfo metadata is preserved. The existing Rename action skips custom archive names.
           </p>
         )}
       </div>
