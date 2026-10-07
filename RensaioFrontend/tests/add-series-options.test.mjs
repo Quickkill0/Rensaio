@@ -128,3 +128,25 @@ test("submit sends explicit separate intent, trims alias, retains fractional sta
   assert.equal(payload.createSeparateInstance, undefined);
   assert.equal(payload.displayName, undefined);
 });
+test("separate entry requires a deliberate new folder instead of inheriting an absolute suggestion", () => {
+  const original = { useState: React.useState, useEffect: React.useEffect, useMemo: React.useMemo, useRef: React.useRef, useCallback: React.useCallback };
+  let state = { ...props().formState, storagePath: "/library/Original" };
+  React.useState = (initial) => [typeof initial === "function" ? initial() : initial, noop];
+  React.useEffect = noop;
+  React.useMemo = (fn) => fn();
+  React.useRef = (value) => ({ current: value });
+  React.useCallback = (fn) => fn;
+  let tree;
+  try { tree = ConfirmSeriesStep({ ...props(), formState: state, setFormState: (updater) => { state = updater(state); } }); }
+  finally { Object.assign(React, original); }
+  function find(node) {
+    if (!node || typeof node !== "object") return undefined;
+    if (node.props?.id === "separate-instance") return node;
+    for (const child of React.Children.toArray(node.props?.children)) { const hit = find(child); if (hit) return hit; }
+  }
+  find(tree).props.onCheckedChange(true);
+  assert.equal(state.createSeparateInstance, true);
+  assert.equal(state.storagePath, undefined);
+  find(tree).props.onCheckedChange(false);
+  assert.equal(state.createSeparateInstance, false);
+});
