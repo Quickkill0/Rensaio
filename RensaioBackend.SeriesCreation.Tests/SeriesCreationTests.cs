@@ -287,6 +287,8 @@ public sealed class SeriesCreationTests : IDisposable
     [Theory]
     [InlineData(3.5)]
     [InlineData(10.0)]
+    [InlineData(12.0)]
+    [InlineData(12.5)]
     public async Task AutomaticDownloadsRespectStartFromActualCreationState(double chosenStart)
     {
         var request = Request(separate: true, name: "Manga [EN]");
@@ -295,7 +297,7 @@ public sealed class SeriesCreationTests : IDisposable
         _db.ChangeTracker.Clear();
         var series = await _db.Series.Include(s => s.Sources).SingleAsync(s => s.Id == id);
         var provider = Assert.Single(series.Sources);
-        var online = new decimal[] { 1, 3, 3.5m, 4, 5, 10 }.Select(n => new ParsedChapter
+        var online = new decimal[] { 1, 3, 3.5m, 4, 5, 10, 12, 12.5m, 13 }.Select(n => new ParsedChapter
         {
             ParsedNumber = n, ParsedName = $"Chapter {n}", RealUrl = $"/chapter/{n}",
             DateUpload = DateTimeOffset.UtcNow, Scanlator = provider.Provider
@@ -309,6 +311,25 @@ public sealed class SeriesCreationTests : IDisposable
             Assert.Equal("Original Manga", d.SeriesTitle);
             Assert.Equal(series.StoragePath, d.StoragePath);
         });
+    }
+
+    [Fact]
+    public async Task UnspecifiedStartKeepsDefaultAutomaticDownloadSelection()
+    {
+        var request = Request();
+        request.StartChapter = null;
+        Guid id = await _command.AddSeriesAsync(request);
+        _db.ChangeTracker.Clear();
+        var series = await _db.Series.Include(s => s.Sources).SingleAsync(s => s.Id == id);
+        var provider = Assert.Single(series.Sources);
+        Assert.Null(series.StartFromChapter);
+        var online = new decimal[] { 1, 12, 12.5m, 13 }.Select(n => new ParsedChapter
+        {
+            ParsedNumber = n, ParsedName = $"Chapter {n}", RealUrl = $"/chapter/{n}",
+            DateUpload = DateTimeOffset.UtcNow, Scanlator = provider.Provider
+        }).ToList();
+        Assert.Equal(online.Select(c => c.ParsedNumber),
+            series.GenerateDownloadsFromChapterData(provider, online).Select(d => d.Chapter.ParsedNumber));
     }
 
     [Fact]
