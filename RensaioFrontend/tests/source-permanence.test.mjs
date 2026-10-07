@@ -80,6 +80,7 @@ test("source cards explain demotion and expose cleanup only for temporary source
   assert.match(temporary, /Clean up duplicate copies/);
   assert.doesNotMatch(temporary, /Requires another permanent source/);
   assert.match(card(false), /Requires another permanent source/);
+  assert.match(card(false, { provider: { ...source("a", false), isUnknown: true }, hasOtherPermanentSource: true }), /Clean up duplicate copies/);
 });
 test("unsaved demotion cannot trigger cleanup, and read-only viewers cannot clean up", () => {
   const html = card(true, { useStorage: false, hasOtherPermanentSource: true });
