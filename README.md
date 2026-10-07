@@ -107,6 +107,11 @@ It uses the power of  **MIHON extensions** to connect with multiple sources.
   removes the complete series folder (archives, covers, metadata and other files).
   Paths outside the library or containing symbolic links are refused. Storage errors
   are reported and the library record is retained; check permissions before retrying.
+  If a reader removes the entire folder of a previously downloaded/imported series,
+  its next refresh/download attempt automatically pauses it rather than recreating
+  the folder. Resume explicitly to download again. New subscriptions are unaffected;
+  deleting an individual chapter still follows the usual completionist behavior.
+  This check runs with refresh/download work, not a continuous filesystem watcher.
 
 - 🔄 **Auto-Updates**  
   Extensions are kept up to date.
