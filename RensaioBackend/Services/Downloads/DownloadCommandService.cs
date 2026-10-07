@@ -92,9 +92,51 @@ namespace RensaioBackend.Services.Downloads
             finally { SeriesDownloadCancellation.Unregister(ch.SeriesId, cancellation); }
         }
 
+        /// <summary>Check before refresh writes can recreate a reader-deleted folder.</summary>
+        public async Task<bool> PauseIfSeriesFolderMissingAsync(Guid seriesId, CancellationToken token = default)
+        {
+            using var mutation = await SeriesMutationLock.AcquireAsync(seriesId, token).ConfigureAwait(false);
+            return await PauseIfSeriesFolderMissingUnderLockAsync(seriesId, token).ConfigureAwait(false);
+        }
+
+        private async Task<bool> PauseIfSeriesFolderMissingUnderLockAsync(Guid seriesId, CancellationToken token)
+        {
+            var series = await _db.Series.Include(s => s.Sources).AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == seriesId, token).ConfigureAwait(false);
+            if (series == null || series.PauseDownloads) return false;
+            // New subscriptions have no folder yet. Only pause when downloaded/imported
+            // chapter evidence remains; explicit Resume recreates the folder via state sync.
+            if (!series.Sources.SelectMany(s => s.Chapters).Any(c => c.DownloadDate.HasValue || !string.IsNullOrEmpty(c.Filename)))
+                return false;
+            var settings = await _settings.GetSettingsAsync(token).ConfigureAwait(false);
+            string path = FileSystemExtensions.ResolveSafeSeriesPath(settings.StorageFolder, series.StoragePath);
+            try
+            {
+                if ((File.GetAttributes(path) & FileAttributes.Directory) != 0) return false;
+                throw new IOException("Series storage path is not a directory.");
+            }
+            catch (DirectoryNotFoundException) { }
+            catch (FileNotFoundException) { }
+
+            await _db.Series.Where(s => s.Id == seriesId)
+                .ExecuteUpdateAsync(u => u.SetProperty(s => s.PauseDownloads, true), token).ConfigureAwait(false);
+            // Refresh contexts may already track this series. Keep their pause flag in sync
+            // without persisting unrelated stale metadata over the fresh database state.
+            var tracked = _db.Series.Local.FirstOrDefault(s => s.Id == seriesId);
+            if (tracked != null) _db.Entry(tracked).Property(s => s.PauseDownloads).CurrentValue = true;
+            // This check can run inside the active download whose token we are about to
+            // cancel. Complete durable queue/schedule cleanup independently of that token.
+            await _jobManagementService.CancelDownloadsForSeriesAsync(seriesId, CancellationToken.None).ConfigureAwait(false);
+            foreach (var source in series.Sources)
+                await _jobManagementService.DisableRecurringJobAsync(JobType.GetChapters, source.Id.ToString(), CancellationToken.None).ConfigureAwait(false);
+            _logger.LogWarning("Paused series {SeriesTitle}: its previously downloaded folder is missing ({Path}). Resume explicitly to download again.", series.Title, path);
+            return true;
+        }
+
         private async Task<bool> CanDownloadAsync(ChapterDownload chapter, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
+            if (await PauseIfSeriesFolderMissingUnderLockAsync(chapter.SeriesId, token).ConfigureAwait(false)) return false;
             return await _db.Series.AsNoTracking().AnyAsync(s => s.Id == chapter.SeriesId && !s.PauseDownloads, token)
                 .ConfigureAwait(false) && await _db.SeriesProviders.AsNoTracking().AnyAsync(p =>
                     p.Id == chapter.SeriesProviderId && p.SeriesId == chapter.SeriesId && !p.IsDisabled && !p.IsUninstalled, token)
@@ -430,6 +472,7 @@ namespace RensaioBackend.Services.Downloads
         public async Task<JobResult> QueueChapterDownloadsAsync(SeriesProviderEntity serie, List<ChapterDownload> chaps, CancellationToken token = default)
         {
             using var mutation = await SeriesMutationLock.AcquireAsync(serie.SeriesId, token).ConfigureAwait(false);
+            if (await PauseIfSeriesFolderMissingUnderLockAsync(serie.SeriesId, token).ConfigureAwait(false)) return JobResult.Delete;
             if (!await _db.Series.AsNoTracking().AnyAsync(s => s.Id == serie.SeriesId && !s.PauseDownloads, token)
                 .ConfigureAwait(false)) return JobResult.Delete;
             if (!await _db.SeriesProviders.AsNoTracking().AnyAsync(p => p.Id == serie.Id && !p.IsDisabled && !p.IsUninstalled, token)
