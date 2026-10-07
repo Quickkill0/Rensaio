@@ -155,13 +155,30 @@ export function ConfirmSeriesStep({
     return [];
   }, [formState.fullSeries, existingSources]);
 
-  // ── setCanProgress effect (verbatim) ──────────────────────────────────────
+  const [startChapterInput, setStartChapterInput] = React.useState(
+    formState.originalAugmentedResponse?.startChapter?.toString() ?? "",
+  );
+  const startChapterIsValid = startChapterInput.trim() === "" ||
+    (Number.isFinite(Number(startChapterInput)) && Number(startChapterInput) >= 0);
+  const handleStartChapterChange = (value: string) => {
+    setStartChapterInput(value);
+    const chapter = value.trim() === "" ? undefined : Number(value);
+    setFormState((prev) => ({
+      ...prev,
+      originalAugmentedResponse: prev.originalAugmentedResponse ? {
+        ...prev.originalAugmentedResponse,
+        startChapter: chapter !== undefined && Number.isFinite(chapter) && chapter >= 0 ? chapter : undefined,
+      } : undefined,
+    }));
+  };
+
+  // ── setCanProgress effect ────────────────────────────────────────────────
   React.useEffect(() => {
     const hasSelectedSeries = validFullSeries.some(
       (series) => series.isSelected && !series.isUnselectable,
     );
-    setCanProgress(hasSelectedSeries);
-  }, [validFullSeries, setCanProgress]);
+    setCanProgress(hasSelectedSeries && (isAddSourcesMode || startChapterIsValid));
+  }, [validFullSeries, setCanProgress, isAddSourcesMode, startChapterIsValid]);
 
   // ── Auto-initialize first selectable (verbatim) ───────────────────────────
   React.useEffect(() => {
@@ -672,6 +689,30 @@ export function ConfirmSeriesStep({
               );
             })}
           </div>
+
+          {!isAddSourcesMode && (
+            <div className="mt-4 rounded-lg border border-border/60 bg-card/50 p-3">
+              <Label htmlFor="start-chapter" className="text-sm font-medium">Start at chapter</Label>
+              <Input
+                id="start-chapter"
+                type="number"
+                min={0}
+                step="any"
+                inputMode="decimal"
+                value={startChapterInput}
+                onChange={(e) => handleStartChapterChange(e.target.value)}
+                placeholder="All chapters"
+                aria-describedby="start-chapter-help"
+                aria-invalid={!startChapterIsValid}
+                className="mt-2 max-w-48 bg-card"
+              />
+              <p id="start-chapter-help" className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                Download this chapter and later chapters from the selected sources.
+                Decimals such as 12.5 are supported. Leave blank to download all chapters.
+              </p>
+              {!startChapterIsValid && <p role="alert" className="mt-2 text-xs text-destructive">Enter a finite chapter number of 0 or greater.</p>}
+            </div>
+          )}
 
           {/* More options — Storage Path + Category */}
           {!isAddSourcesMode && titleSeries && (
