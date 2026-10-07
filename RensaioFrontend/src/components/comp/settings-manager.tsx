@@ -1893,7 +1893,7 @@ export function SettingsManager({
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to save settings",
+        description: error instanceof Error ? error.message : "Failed to save settings. Please try again.",
         variant: "destructive",
       });
     }
