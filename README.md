@@ -148,6 +148,7 @@ Rensaiō is composed of:
 ## ⚙️ Issues
 
 - If you encounter any issues, check the `logs` folder. You can review the logs there or upload them to share feedback.
+- **Previously misnumbered fractional chapters (for example, Mangaworld's `Capitolo 08.5` stored as chapter `8`):** freshly fetched chapter lists now preserve an explicit matching fraction from the chapter name. This does not migrate existing database entries or adopt, rename, or delete old archives. Back up your config/database and series folder before reconciling an affected library. Refresh the chapter list and re-download missing fractional chapters from the affected source; automatic downloads may still skip older fractions because of the source's continue-after/start-chapter threshold. Old orphan archives remain on disk and may duplicate the new download. Check which archive is actually tracked and inspect its contents before any manual cleanup; the tracked whole-number entry could point to either the whole or fractional chapter. A successful integrity check alone does not prove that a valid archive contains the correctly numbered chapter.
 
 ---
 
