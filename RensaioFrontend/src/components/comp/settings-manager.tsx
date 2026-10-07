@@ -770,6 +770,28 @@ function StorageSection({
         )}
       </div>
 
+      <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <Switch
+            id="inject-series-cover"
+            checked={localSettings.injectSeriesCover ?? false}
+            aria-describedby="inject-series-cover-help"
+            onCheckedChange={(checked) => setLocalSettings((prev) => ({ ...prev, injectSeriesCover: checked }))}
+          />
+          <Label htmlFor="inject-series-cover">Include series cover in new CBZ files</Label>
+        </div>
+        <p id="inject-series-cover-help" className="text-muted-foreground text-sm">
+          Adds the existing series cover.jpg as the first image and marks it as FrontCover
+          in ComicInfo. Choose the cover source in the series settings. Off by default.
+        </p>
+        <p className="text-muted-foreground text-sm">
+          New downloads only, not existing archives. Uses the already saved JPEG (up to 5 MiB,
+          8192 pixels per side, 32 megapixels), with no extra web requests. Missing or invalid
+          covers are skipped. Each CBZ contains its own copy, so storage usage increases.
+          No chapter-specific cover editor or RSS/web scraper is included.
+        </p>
+      </div>
+
       <div className="flex items-center space-x-2">
         <Switch
           id="categorized-folders"

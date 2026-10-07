@@ -160,6 +160,27 @@ namespace RensaioBackend.Services.Downloads
             int pagesWritten = 0;
             string tempZipPath = Path.Combine(_tempFolder, Guid.NewGuid().ToString("N") + ".cbz");
             bool breaked = false;
+            byte[]? seriesCover = null;
+            if (appSettings.InjectSeriesCover)
+            {
+                try
+                {
+                    seriesCover = await SeriesCoverArchive.LoadAsync(appSettings.StorageFolder, ch.StoragePath, token).ConfigureAwait(false);
+                    if (seriesCover != null)
+                    {
+                        // Validate decoding after byte/dimension limits, using the existing image codec.
+                        using var decoded = SkiaSharp.SKBitmap.Decode(seriesCover);
+                        if (decoded == null) throw new InvalidDataException("Series cover JPEG cannot be decoded.");
+                    }
+                    else
+                        _logger.LogInformation("No cached cover.jpg for {SeriesTitle}; creating chapter without an injected cover.", ch.Title);
+                }
+                catch (Exception error) when (error is not OperationCanceledException)
+                {
+                    seriesCover = null;
+                    _logger.LogWarning(error, "Skipping invalid or unavailable series cover for {SeriesTitle}; chapter pages will still be downloaded.", ch.Title);
+                }
+            }
 
             try
             {
@@ -176,6 +197,11 @@ namespace RensaioBackend.Services.Downloads
                 {
                     await using (var zipWriter = await WriterFactory.OpenAsyncWriter(zipStream, ArchiveType.Zip, new ZipWriterOptions(CompressionType.None)).ConfigureAwait(false))
                     {
+                        if (seriesCover != null)
+                        {
+                            using var coverStream = new MemoryStream(seriesCover, writable: false);
+                            await zipWriter.WriteAsync(SeriesCoverArchive.EntryName, coverStream).ConfigureAwait(false);
+                        }
                         foreach (Page pag in ch.Pages)
                         {
                             try
@@ -225,7 +251,13 @@ namespace RensaioBackend.Services.Downloads
                         {
                             using (Stream comicInfo = ArchiveHelperService.CreateComicInfo(ch, pagesWritten).ToStream())
                             {
-                                ((ZipWriter)zipWriter).Write("ComicInfo.xml", comicInfo, new ZipWriterEntryOptions { CompressionType = CompressionType.Deflate, ModificationDateTime = DateTime.Now });
+                                if (seriesCover != null)
+                                {
+                                    using var withCover = SeriesCoverArchive.AddComicInfoCover(comicInfo, pagesWritten + 1);
+                                    ((ZipWriter)zipWriter).Write("ComicInfo.xml", withCover, new ZipWriterEntryOptions { CompressionType = CompressionType.Deflate, ModificationDateTime = DateTime.Now });
+                                }
+                                else
+                                    ((ZipWriter)zipWriter).Write("ComicInfo.xml", comicInfo, new ZipWriterEntryOptions { CompressionType = CompressionType.Deflate, ModificationDateTime = DateTime.Now });
                             }
                         }
                     }
@@ -285,7 +317,7 @@ namespace RensaioBackend.Services.Downloads
                         providerr.Chapters = providerr.Chapters.OrderBy(c => c.Number).ToList();
                     }
 
-                    cha.PageCount = pagesWritten;
+                    cha.PageCount = pagesWritten + (seriesCover != null ? 1 : 0);
                     cha.IsDeleted = false;
                     cha.Name = ch.Chapter.Name;
                     cha.Number = ch.Chapter.ParsedNumber;

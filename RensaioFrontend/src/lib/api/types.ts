@@ -29,6 +29,7 @@ export interface Settings {
   extensionsCheckForUpdateSchedule: string; // TimeSpan as string
   categorizedFolders: boolean;
   chapterFilenameTemplate?: string;
+  injectSeriesCover?: boolean;
   categories: string[];
   flareSolverrEnabled: boolean;
   flareSolverrUrl: string;
