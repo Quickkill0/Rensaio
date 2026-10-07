@@ -137,7 +137,7 @@ export const ProviderCard = ({
   const [confirmCleanup, setConfirmCleanup] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
   const [cleanupError, setCleanupError] = useState<string | null>(null);
-  const canCleanup = !provider.isUnknown && !useStorage && !provider.isStorage && hasOtherPermanentSource;
+  const canCleanup = !useStorage && !provider.isStorage && hasOtherPermanentSource;
 
   const queryClient = useQueryClient();
 
@@ -461,14 +461,14 @@ export const ProviderCard = ({
         )}
       </div>
 
-      {!isUnknown && (
+      {(
         <p className="mt-3 border-t border-border/40 pt-3 text-xs leading-relaxed text-muted-foreground">
           Permanent sources always download their own copies and replace temporary
           copies. Temporary sources fill missing chapters. Changing this setting
           does not delete existing files.
         </p>
       )}
-      {canEdit && !isUnknown && !useStorage && (
+      {canEdit && !useStorage && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
