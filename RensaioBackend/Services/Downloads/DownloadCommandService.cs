@@ -75,6 +75,34 @@ namespace RensaioBackend.Services.Downloads
         /// <returns>Job result indicating success or failure</returns>
         public async Task<JobResult> DownloadChapterAsync(ChapterDownload ch, JobInfo job, CancellationToken token = default)
         {
+            CancellationTokenSource cancellation;
+            using (await SeriesMutationLock.AcquireAsync(ch.SeriesId, token).ConfigureAwait(false))
+            {
+                if (!await CanDownloadAsync(ch, token).ConfigureAwait(false)) return JobResult.Delete;
+                cancellation = SeriesDownloadCancellation.Register(ch.SeriesId, token);
+            }
+            try
+            {
+                return await DownloadChapterCoreAsync(ch, job, cancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                return JobResult.Delete;
+            }
+            finally { SeriesDownloadCancellation.Unregister(ch.SeriesId, cancellation); }
+        }
+
+        private async Task<bool> CanDownloadAsync(ChapterDownload chapter, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            return await _db.Series.AsNoTracking().AnyAsync(s => s.Id == chapter.SeriesId && !s.PauseDownloads, token)
+                .ConfigureAwait(false) && await _db.SeriesProviders.AsNoTracking().AnyAsync(p =>
+                    p.Id == chapter.SeriesProviderId && p.SeriesId == chapter.SeriesId && !p.IsDisabled && !p.IsUninstalled, token)
+                .ConfigureAwait(false);
+        }
+
+        private async Task<JobResult> DownloadChapterCoreAsync(ChapterDownload ch, JobInfo job, CancellationToken token)
+        {
             string providerName = ch.ProviderName ?? ch.MihonProviderId;
             _logger.LogInformation("Starting download for chapter {ParsedNumber} of series {SeriesTitle} from provider {ProviderName}...", ch.Chapter.ParsedNumber, ch.Title, providerName);
             ProgressReporter reporter = _reportingService.CreateReporter(job);
@@ -244,6 +272,13 @@ namespace RensaioBackend.Services.Downloads
                 // Serialize file publication as well as DB changes with explicit source cleanup.
                 using (var n = await SeriesMutationLock.AcquireAsync(ch.SeriesId, token).ConfigureAwait(false))
                 {
+                    // A native source may ignore cancellation. Recheck both the token and
+                    // fresh persisted state before creating directories or publishing files.
+                    if (!await CanDownloadAsync(ch, token).ConfigureAwait(false))
+                    {
+                        File.Delete(tempZipPath);
+                        return JobResult.Delete;
+                    }
                     string dirPath = Path.Combine(appSettings.StorageFolder, ch.StoragePath);
                     if (!Directory.Exists(dirPath))
                         Directory.CreateDirectory(dirPath);
@@ -256,8 +291,8 @@ namespace RensaioBackend.Services.Downloads
                     catch (Exception e)
                     {
                         _logger.LogError(e, "Failed to move downloaded file from {TempZipPath} to {FinalPath}", tempZipPath, finalPath);
-                        await reporter.ReportAsync(ProgressStatus.Failed, (int)acum, message, downloadSummary,null, token).ConfigureAwait(false);
-                        return await RescheduleDownloadAsync(ch, token).ConfigureAwait(false);
+                        // Retry outside the non-reentrant publication gate.
+                        throw;
                     }
 
                     SeriesProviderEntity? providerr = await _db.SeriesProviders.FirstOrDefaultAsync(a => a.Id == ch.SeriesProviderId, token).ConfigureAwait(false);
@@ -394,6 +429,11 @@ namespace RensaioBackend.Services.Downloads
         /// <returns>Job result</returns>
         public async Task<JobResult> QueueChapterDownloadsAsync(SeriesProviderEntity serie, List<ChapterDownload> chaps, CancellationToken token = default)
         {
+            using var mutation = await SeriesMutationLock.AcquireAsync(serie.SeriesId, token).ConfigureAwait(false);
+            if (!await _db.Series.AsNoTracking().AnyAsync(s => s.Id == serie.SeriesId && !s.PauseDownloads, token)
+                .ConfigureAwait(false)) return JobResult.Delete;
+            if (!await _db.SeriesProviders.AsNoTracking().AnyAsync(p => p.Id == serie.Id && !p.IsDisabled && !p.IsUninstalled, token)
+                .ConfigureAwait(false)) return JobResult.Delete;
             string scanlator = string.Empty;
             if (!string.IsNullOrEmpty(serie.Scanlator) && serie.Scanlator != serie.Provider)
                 scanlator = ":" + serie.Scanlator;
@@ -435,6 +475,8 @@ namespace RensaioBackend.Services.Downloads
         /// <returns>Job result</returns>
         private async Task<JobResult> RescheduleDownloadAsync(ChapterDownload download, CancellationToken token = default)
         {
+            using var mutation = await SeriesMutationLock.AcquireAsync(download.SeriesId, token).ConfigureAwait(false);
+            if (!await CanDownloadAsync(download, token).ConfigureAwait(false)) return JobResult.Delete;
             SettingsDto appSettings = await _settings.GetSettingsAsync(token).ConfigureAwait(false);
             download.Retries++;
             string key = $"{download.MihonId}|{download.Index}";
