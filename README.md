@@ -103,6 +103,10 @@ It uses the power of  **MIHON extensions** to connect with multiple sources.
   blocks retries until you resume. In-flight native calls stop cooperatively; a call
   that cannot stop immediately may finish internally, but cannot publish an archive
   after pause. Resume recalculates missing chapters.
+  **Delete** keeps files unless **Delete physical files** is selected. Selecting it
+  removes the complete series folder (archives, covers, metadata and other files).
+  Paths outside the library or containing symbolic links are refused. Storage errors
+  are reported and the library record is retained; check permissions before retrying.
 
 - 🔄 **Auto-Updates**  
   Extensions are kept up to date.
