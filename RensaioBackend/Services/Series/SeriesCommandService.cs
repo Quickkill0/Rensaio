@@ -554,6 +554,7 @@ namespace RensaioBackend.Services.Series
                 throw new ArgumentException("Invalid Series Guid provided for delete");
             }
 
+            using var mutation = await SeriesMutationLock.AcquireAsync(id, token).ConfigureAwait(false);
             Models.Database.SeriesEntity? dbSeries = await _db.Series.Include(s => s.Sources)
                 .FirstOrDefaultAsync(s => s.Id == id, token).ConfigureAwait(false);
             if (dbSeries == null)
@@ -570,12 +571,21 @@ namespace RensaioBackend.Services.Series
                 .Where(id => !string.IsNullOrWhiteSpace(id))
                 .ToList();
             
+            // Validate before touching any queue/database state. Serialize with publication
+            // so an in-flight download cannot recreate the folder after deletion.
+            if (alsoPhysical)
+                FileSystemExtensions.ResolveSafeSeriesPath(settings.StorageFolder, dbSeries.StoragePath);
+            await _jobManagement.CancelDownloadsForSeriesAsync(id, token).ConfigureAwait(false);
             if (alsoPhysical)
                 dbSeries.DeletePhysicalSeries(settings, _logger);
-            
+
             foreach (SeriesProviderEntity p in dbSeries.Sources)
             {
-                await _providerService.RescheduleIfNeededAsync([p], false, true, token).ConfigureAwait(false);
+                await _jobManagement.DeleteRecurringJobAsync(JobType.GetChapters, p.Id.ToString(), token).ConfigureAwait(false);
+                string key = $"{JobType.GetChapters}_{p.Id}";
+                var refreshJobs = await _db.Queues.Where(q => q.JobType == JobType.GetChapters && q.Key == key)
+                    .Select(q => q.Id).ToListAsync(token).ConfigureAwait(false);
+                await _jobManagement.DeleteQueuedJobsAsync(refreshJobs, token).ConfigureAwait(false);
             }
 
             // Remove global scrobbling/mapping rows for this series. The model configures
