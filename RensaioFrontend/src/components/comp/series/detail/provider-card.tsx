@@ -226,7 +226,7 @@ export const ProviderCard = ({
       }
       toast({
         title: result.deleted === 0 ? "No safe duplicates to remove" : "Duplicate copies removed",
-        description: `${result.deleted} files removed; ${result.skipped} skipped. Unique chapters and the fallback source were kept.`,
+        description: `${result.deleted} copies removed from the library; ${result.skipped} skipped. Unique chapters and the fallback source were kept. Recovery files may remain if disk cleanup failed.`,
       });
       setConfirmCleanup(false);
       await queryClient.invalidateQueries({ queryKey: ["series", "detail", seriesId] });
