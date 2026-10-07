@@ -1,7 +1,7 @@
 using RensaioBackend.Utils;
 using Xunit;
 
-namespace RensaioBackend.Tests;
+namespace RensaioBackend.StorageAccess.Tests;
 
 public class StorageAccessValidatorTests : IDisposable
 {
