@@ -2,7 +2,7 @@ using Mihon.ExtensionsBridge.Models.Extensions;
 using RensaioBackend.Services.Series;
 using Xunit;
 
-namespace RensaioBackend.Tests;
+namespace RensaioBackend.Paging.Tests;
 
 public class LatestPagingPolicyTests
 {
