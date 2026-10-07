@@ -2,7 +2,7 @@ using Mihon.ExtensionsBridge.Core.Utilities;
 using Mihon.ExtensionsBridge.Models.Extensions;
 using Xunit;
 
-namespace Mihon.ExtensionsBridge.Core.UnitTests;
+namespace RensaioBackend.Chapters.Tests;
 
 public class ChapterUtilsTests
 {
