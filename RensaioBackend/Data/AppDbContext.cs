@@ -330,9 +330,9 @@ namespace RensaioBackend.Data
             {
                 foreach (var property in entityType.GetProperties())
                 {
-                    // "BINARY" is SQLite's byte-order collation and is that provider's default
-                    // anyway; other providers have no collation by that name and are already
-                    // case-sensitive and byte-ordered without it.
+                    // "BINARY" is SQLite's byte-order collation. PostgreSQL has no collation
+                    // by that name: string ordering there follows the database's locale.
+                    // Use a deterministic, case-sensitive database collation.
                     if (string.Equals(property.GetCollation(), "BINARY", StringComparison.Ordinal))
                         property.SetCollation(null);
 

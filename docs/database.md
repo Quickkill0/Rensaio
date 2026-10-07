@@ -18,6 +18,8 @@ environment:
   - Database__Password=xxxxxxxx
 ```
 
+Use a Rensaiō image built from a revision that includes PostgreSQL support; the examples' `maxpiva/rensaio:latest` tag will only work after this feature is released there.
+
 On first start Rensaiō creates its tables and is ready to use. A complete Compose file with a bundled PostgreSQL service is at [`examples/docker-compose.postgres.yml`](../examples/docker-compose.postgres.yml), and Helm values at [`examples/helm-values-postgres.yaml`](../examples/helm-values-postgres.yaml).
 
 If PostgreSQL is unreachable at startup Rensaiō stops with an error naming the host and database. It never falls back to SQLite on its own.
@@ -44,13 +46,15 @@ If PostgreSQL is unreachable at startup Rensaiō stops with an error naming the 
 
 A marker file `rensaio.db.migrated-to-postgres` is written next to the SQLite file. If Rensaiō later starts on SQLite with that marker present it logs a warning, so a lost `Database__Provider` setting is noticed instead of silently running on stale data.
 
-Exit codes of `migrate-db`: `0` done, `1` bad arguments or configuration, `2` target not empty, `3` row counts differed after the copy (drop the target database and retry).
+Exit codes of `migrate-db`: `0` done, `1` bad arguments, configuration or a failed copy, `2` target not empty. All rows are copied in a single target transaction and row counts are checked **before** commit; an insert failure, cancellation or count mismatch rolls back the copied rows. Schema creation/migrations are separate and may remain after a failed copy, so retry against that empty schema. The source is read through a consistent snapshot; keep the app stopped on both databases until the copy finishes. Driver exceptions and row payloads are not printed because they can contain secrets.
 
 ## What is different on PostgreSQL
 
 - The daily database backup in `/config/Backups` is off. Back the database up on the server.
 - The one-time Kaizoku 1.0 import only runs on SQLite. Upgrade on SQLite first, then move.
 - Run one instance against one database. Rensaiō is not designed for several replicas.
+- Use PostgreSQL's normal deterministic, case-sensitive database collation. Sorting follows its locale, not SQLite's `BINARY` byte order; a case-insensitive/nondeterministic collation can change uniqueness semantics for user names and external IDs.
+- PostgreSQL cannot store embedded NUL characters in text. A source containing unsupported values fails the copy and leaves target rows rolled back; do not discard the SQLite source.
 
 ## Configuration reference (`appsettings.json` or environment variables)
 
@@ -92,12 +96,12 @@ env:
     valueFrom: { secretKeyRef: { name: rensaio-postgres, key: password } }
 ```
 
-For a server that requires TLS verification, mount the CA and point at it with either `Database__RootCertificate` or the standard `PGSSLROOTCERT` (plus `PGSSLMODE=verify-full`). Both are read by the PostgreSQL driver without any Rensaiō-specific setting.
+For a server that requires TLS verification, mount the CA and point at it with either `Database__RootCertificate` or the standard `PGSSLROOTCERT` (plus `PGSSLMODE=verify-full`). Rensaiō explicitly applies these as fallbacks when the connection/config does not specify TLS settings; explicit `Database__SslMode` / `RootCertificate` or connection-string values win. An invalid `PGSSLMODE` fails configuration rather than silently downgrading TLS.
 
 To run the copy in a cluster, use a one-off pod or Job with the same `/config` volume and the same environment, and:
 
 ```yaml
-command: ["/app/entrypoint.sh", "migrate-db", "--to", "postgres"]
+args: ["migrate-db", "--to", "postgres"]
 ```
 
 ## A `postgresql://` URI from a managed host
@@ -136,6 +140,6 @@ Booleans arrive as `0`/`1` and dates as text without a time zone; PostgreSQL par
 
 - A schema change needs a migration for **both** providers. Run `./add_migration.sh Name` (or `add_migration.ps1`), never `dotnet ef migrations add` by hand. The scripts pick up `dotnet-ef` from `.config/dotnet-tools.json`. The "Backend tests" workflow fails when either set is behind the model.
 - The entity configuration in `AppDbContext` is written for SQLite. Provider differences are applied in one place at the end of `OnModelCreating` (`ApplyProviderConventions`); do not branch per property.
-- `RensaioBackend.Tests` runs every database spec on SQLite and on PostgreSQL (Testcontainers, needs Docker or a Podman socket). Set `RENSAIO_TEST_POSTGRES` to an Npgsql connection string with `CREATE DATABASE` rights to use an existing server instead. To run only SQLite: `dotnet test --filter "FullyQualifiedName!~Postgres"`.
+- `RensaioBackend.Tests` runs every database spec on SQLite and on PostgreSQL (Testcontainers, needs Docker or a Podman socket). Set `RENSAIO_TEST_POSTGRES` to an Npgsql connection string with `CREATE DATABASE` rights to use an existing server instead. To run only SQLite and configuration checks: `dotnet test RensaioBackend.Tests/RensaioBackend.Tests.csproj --filter "FullyQualifiedName~SqliteDatabaseSpec|FullyQualifiedName~DatabaseConfigTests"`. Never point `RENSAIO_TEST_POSTGRES` at a production server: tests create and drop disposable databases.
 - `migrate-db` copies with SQL generated from the two models, not with entities: column defaults never overwrite real values, and JSON/CSV columns move as text without being deserialized (stored payloads do not always survive a round trip).
 - `ContributionDbContext` (the contributor cache) is always SQLite. It mirrors the Cloudflare D1 store byte for byte and is rebuilt from `metadata.bin`, so there is nothing to gain from moving it.

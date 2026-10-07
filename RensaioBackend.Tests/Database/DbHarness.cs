@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using RensaioBackend.Data;
 using RensaioBackend.Migration;
@@ -29,8 +31,13 @@ public sealed class SqliteHarness : IDbHarness, IDisposable
         string path = Path.Combine(Path.GetTempPath(), $"rensaio-test-{Guid.NewGuid():N}.db");
         _files.Add(path);
         var db = Open(path);
-        await db.Database.EnsureCreatedAsync();
-        await MigrationService.MarkAllMigrationsAsAppliedAsync(db, CancellationToken.None);
+        var configuration = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:DefaultConnection"] = "Data Source=" + path })
+            .Build();
+        using var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection().BuildServiceProvider();
+        var migration = new MigrationService(services, null!, Microsoft.Extensions.Logging.Abstractions.NullLogger<MigrationService>.Instance, configuration);
+        await migration.RunAsync();
+        await db.Database.MigrateAsync();
         return db;
     }
 

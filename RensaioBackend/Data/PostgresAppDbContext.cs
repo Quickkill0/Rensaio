@@ -25,6 +25,9 @@ namespace RensaioBackend.Data
         /// translated here rather than passed through.
         /// </summary>
         public static string BuildConnectionString(PostgresSettings settings)
+            => BuildConnectionString(settings, Environment.GetEnvironmentVariable("PGSSLMODE"), Environment.GetEnvironmentVariable("PGSSLROOTCERT"));
+
+        internal static string BuildConnectionString(PostgresSettings settings, string? sslModeEnvironment, string? rootCertificateEnvironment)
         {
             ArgumentNullException.ThrowIfNull(settings);
 
@@ -49,6 +52,14 @@ namespace RensaioBackend.Data
                 if (settings.RootCertificate is not null)
                     builder.RootCertificate = settings.RootCertificate;
             }
+
+            // Apply libpq TLS environment variables explicitly rather than relying on driver
+            // defaults. Explicit settings win; an invalid requested mode fails closed.
+            // ContainsKey tests supported keywords in Npgsql, not explicit configuration.
+            if (!builder.ShouldSerialize("SSL Mode") && !string.IsNullOrWhiteSpace(sslModeEnvironment))
+                builder.SslMode = ParseSslMode(sslModeEnvironment);
+            if (!builder.ShouldSerialize("Root Certificate") && !string.IsNullOrWhiteSpace(rootCertificateEnvironment))
+                builder.RootCertificate = rootCertificateEnvironment;
 
             if (string.IsNullOrEmpty(builder.Host))
                 throw new InvalidOperationException("PostgreSQL connection has no host.");

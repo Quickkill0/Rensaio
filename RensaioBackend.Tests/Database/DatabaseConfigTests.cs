@@ -62,6 +62,58 @@ public sealed class DatabaseConfigTests
         Assert.Equal("/var/run/secrets/ca.crt", built.RootCertificate);
     }
 
+    [Theory]
+    [InlineData("disable", SslMode.Disable)]
+    [InlineData("allow", SslMode.Allow)]
+    [InlineData("prefer", SslMode.Prefer)]
+    [InlineData("require", SslMode.Require)]
+    [InlineData("verify-ca", SslMode.VerifyCA)]
+    [InlineData("verify-full", SslMode.VerifyFull)]
+    public void Tls_modes_are_not_downgraded(string mode, SslMode expected)
+    {
+        var config = DatabaseConfig.Resolve(Config(("Database:Host", "localhost"), ("Database:SslMode", mode)));
+        var built = new NpgsqlConnectionStringBuilder(PostgresAppDbContext.BuildConnectionString(config.Postgres!));
+        Assert.Equal(expected, built.SslMode);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Libpq_tls_environment_is_applied_without_overriding_explicit_settings(bool raw)
+    {
+        var settings = raw ? new PostgresSettings { RawConnectionString = "Host=localhost" } : new PostgresSettings { Host = "localhost" };
+        var built = new NpgsqlConnectionStringBuilder(PostgresAppDbContext.BuildConnectionString(settings, "verify-full", "/tmp/ca.crt"));
+        Assert.Equal(SslMode.VerifyFull, built.SslMode);
+        Assert.Equal("/tmp/ca.crt", built.RootCertificate);
+        Assert.Throws<InvalidOperationException>(() => PostgresAppDbContext.BuildConnectionString(settings, "invalid", null));
+
+        settings = raw
+            ? new PostgresSettings { RawConnectionString = "Host=localhost;SSL Mode=Require;Root Certificate=/explicit.crt" }
+            : new PostgresSettings { Host = "localhost", SslMode = "require", RootCertificate = "/explicit.crt" };
+        built = new NpgsqlConnectionStringBuilder(PostgresAppDbContext.BuildConnectionString(settings, "verify-full", "/tmp/ca.crt"));
+        Assert.Equal(SslMode.Require, built.SslMode);
+        Assert.Equal("/explicit.crt", built.RootCertificate);
+    }
+
+    [Fact]
+    public void Escaped_credentials_stay_out_of_the_log_description()
+    {
+        var config = DatabaseConfig.Resolve(Config(("ConnectionStrings:DefaultConnection",
+            "postgresql://u:p%3B%3Dx%3A%40@localhost/db?sslmode=verify-full")));
+        string connection = PostgresAppDbContext.BuildConnectionString(config.Postgres!);
+        Assert.Equal("p;=x:@", new NpgsqlConnectionStringBuilder(connection).Password);
+        Assert.DoesNotContain("p;=x:@", PostgresAppDbContext.Describe(connection));
+        Assert.DoesNotContain("Password", PostgresAppDbContext.Describe(connection));
+    }
+
+    [Fact]
+    public async Task Command_rejects_invalid_arguments_without_touching_a_database()
+    {
+        Assert.Equal(1, await MigrateDbCommand.RunAsync(["--to", "postgres", "--unknown"], Config()));
+        Assert.Equal(1, await MigrateDbCommand.RunAsync(["--to", "sqlite", "--to", "postgres"], Config()));
+        Assert.Equal(1, await MigrateDbCommand.RunAsync(["--to", "mysql"], Config()));
+    }
+
     [Fact]
     public void Npgsql_keyword_string_passes_through()
     {

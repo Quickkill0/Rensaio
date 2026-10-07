@@ -72,7 +72,12 @@ namespace RensaioBackend.Data
             if (connection.State != ConnectionState.Open)
                 await connection.OpenAsync(token).ConfigureAwait(false);
 
-            await using var transaction = await target.Database.BeginTransactionAsync(token).ConfigureAwait(false);
+            // Keep a consistent source snapshot and validate before committing any target rows.
+            await using var sourceTransaction = await source.Database.BeginTransactionAsync(IsolationLevel.Serializable, token).ConfigureAwait(false);
+            await using var transaction = await target.Database.BeginTransactionAsync(IsolationLevel.Serializable, token).ConfigureAwait(false);
+            if (!await IsEmptyAsync(target, token).ConfigureAwait(false))
+                throw new InvalidOperationException("The target database already contains data. The copy only writes into an empty database.");
+
             foreach (var targetType in TablesInDependencyOrder(target.Model))
             {
                 var sourceType = source.Model.FindEntityType(targetType.ClrType)
@@ -81,8 +86,6 @@ namespace RensaioBackend.Data
                 long copied = await CopyTableAsync(source, sourceType, target, targetType, connection, transaction.GetDbTransaction(), token).ConfigureAwait(false);
                 progress?.Invoke($"{targetType.GetTableName()}: {copied} rows");
             }
-            await transaction.CommitAsync(token).ConfigureAwait(false);
-
             foreach (var targetType in TablesInDependencyOrder(target.Model))
             {
                 var sourceType = source.Model.FindEntityType(targetType.ClrType)!;
@@ -90,6 +93,9 @@ namespace RensaioBackend.Data
                 long targetRows = await CountAsync(target, targetType, token).ConfigureAwait(false);
                 results.Add(new TableResult(targetType.GetTableName()!, sourceRows, targetRows));
             }
+            if (results.Any(r => !r.Matches))
+                throw new InvalidOperationException("Row counts differ; the copy was rolled back.");
+            await transaction.CommitAsync(token).ConfigureAwait(false);
             return results;
         }
 
@@ -141,6 +147,7 @@ namespace RensaioBackend.Data
             if (sourceConnection.State != ConnectionState.Open)
                 await sourceConnection.OpenAsync(token).ConfigureAwait(false);
             await using var select = sourceConnection.CreateCommand();
+            select.Transaction = source.Database.CurrentTransaction?.GetDbTransaction();
             select.CommandText = $"SELECT {string.Join(", ", plan.Select(c => Quote(c.SourceColumn)))} FROM {Quote(sourceType.GetTableName()!)}";
 
             long count = 0;

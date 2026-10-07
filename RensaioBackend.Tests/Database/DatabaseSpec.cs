@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using RensaioBackend.Data;
 using RensaioBackend.Models.Database;
 using RensaioBackend.Models.Enums;
@@ -24,6 +25,21 @@ public abstract class DatabaseSpec
         Assert.False(db.Database.HasPendingModelChanges(), "the migration set is behind the model; run add_migration");
         Assert.True(await db.Database.CanConnectAsync());
         Assert.Equal(0, await db.Series.CountAsync());
+    }
+
+    [Fact]
+    public async Task Last_migration_can_be_rolled_back_and_reapplied()
+    {
+        await using var db = await Harness.CreateEmptyAsync();
+        var migrations = db.Database.GetMigrations().ToList();
+        var previous = migrations.Count > 1 ? migrations[^2] : "0";
+        var migrator = db.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
+        await migrator.MigrateAsync(previous);
+        Assert.Single(await db.Database.GetPendingMigrationsAsync());
+        await db.Database.MigrateAsync();
+        Assert.Empty(await db.Database.GetPendingMigrationsAsync());
+        await Seed.PopulateAsync(db);
+        Assert.Equal(1, await db.Users.CountAsync());
     }
 
     [Fact]

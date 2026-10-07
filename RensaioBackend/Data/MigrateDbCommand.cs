@@ -8,8 +8,8 @@ namespace RensaioBackend.Data
     /// <c>RensaioBackend migrate-db --to postgres|sqlite</c>: copies the library from the
     /// current database to the other provider, using the same configuration the server
     /// reads (<c>Database:*</c>, <c>ConnectionStrings:DefaultConnection</c>). The source is
-    /// never modified. Exit codes: 0 done, 1 bad arguments or configuration, 2 target not
-    /// empty, 3 row counts differ after the copy.
+    /// never opened for writes by the copier. Exit codes: 0 done, 1 bad arguments, configuration or copy failure,
+    /// 2 target not empty. Failed row copies are rolled back; prepared schema may remain.
     /// </summary>
     public static class MigrateDbCommand
     {
@@ -17,17 +17,28 @@ namespace RensaioBackend.Data
 
         public static async Task<int> RunAsync(string[] args, IConfiguration configuration, CancellationToken token = default)
         {
-            DatabaseProvider? to = null;
-            for (int i = 0; i < args.Length; i++)
+            try
             {
-                if (args[i] == "--to" && i + 1 < args.Length)
-                    to = args[++i].ToLowerInvariant() switch
-                    {
-                        "postgres" or "postgresql" => DatabaseProvider.Postgres,
-                        "sqlite" => DatabaseProvider.Sqlite,
-                        _ => null
-                    };
+                return await CopyAsync(args, configuration, token).ConfigureAwait(false);
             }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Driver exceptions can contain credentials or row payloads. Never print them.
+                Console.Error.WriteLine("Database copy failed; uncommitted target rows were rolled back. Check configuration, TLS, permissions and source schema. Stop Rensaio before retrying.");
+                return 1;
+            }
+        }
+
+        private static async Task<int> CopyAsync(string[] args, IConfiguration configuration, CancellationToken token)
+        {
+            DatabaseProvider? to = null;
+            if (args.Length == 2 && args[0] == "--to")
+                to = args[1].ToLowerInvariant() switch
+                {
+                    "postgres" or "postgresql" => DatabaseProvider.Postgres,
+                    "sqlite" => DatabaseProvider.Sqlite,
+                    _ => null
+                };
             if (to is null)
             {
                 Console.Error.WriteLine("usage: RensaioBackend migrate-db --to postgres|sqlite");
@@ -41,15 +52,20 @@ namespace RensaioBackend.Data
                 sqlite = DatabaseConfig.Resolve(configuration, DatabaseProvider.Sqlite);
                 postgres = DatabaseConfig.Resolve(configuration, DatabaseProvider.Postgres);
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException)
             {
-                Console.Error.WriteLine(ex.Message);
+                Console.Error.WriteLine("Invalid database configuration. Set a valid provider and connection settings.");
                 return 1;
             }
 
             string postgresConnectionString = PostgresAppDbContext.BuildConnectionString(postgres.Postgres!);
             var sqliteOptions = new DbContextOptionsBuilder<SqliteAppDbContext>();
-            SqliteAppDbContext.Configure(sqliteOptions, sqlite.SqliteConnectionString!);
+            var sqliteConnection = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(sqlite.SqliteConnectionString!)
+            {
+                Mode = to == DatabaseProvider.Postgres ? Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly : Microsoft.Data.Sqlite.SqliteOpenMode.ReadWriteCreate,
+                Pooling = false
+            };
+            SqliteAppDbContext.Configure(sqliteOptions, sqliteConnection.ConnectionString);
             var postgresOptions = new DbContextOptionsBuilder<PostgresAppDbContext>();
             PostgresAppDbContext.Configure(postgresOptions, postgresConnectionString);
 
@@ -97,6 +113,12 @@ namespace RensaioBackend.Data
                     Console.Error.WriteLine("Cannot connect to the target database. Check Database__Host/Port/Name/Username/Password.");
                     return 1;
                 }
+                // Reject existing data before schema migrations can change the target.
+                if (await HasPostgresDataAsync(postgresDb, token).ConfigureAwait(false))
+                {
+                    Console.Error.WriteLine("The target database already contains data. The copy only writes into an empty database.");
+                    return 2;
+                }
                 await target.Database.MigrateAsync(token).ConfigureAwait(false);
             }
             else
@@ -116,17 +138,8 @@ namespace RensaioBackend.Data
 
             Console.WriteLine();
             Console.WriteLine($"{"Table",-26} {"Source",10} {"Target",10}");
-            bool ok = true;
             foreach (var r in results)
-            {
-                Console.WriteLine($"{r.Table,-26} {r.SourceRows,10} {r.TargetRows,10} {(r.Matches ? "" : "  MISMATCH")}");
-                ok &= r.Matches;
-            }
-            if (!ok)
-            {
-                Console.Error.WriteLine("Row counts differ. The target is not trustworthy; drop it and retry.");
-                return 3;
-            }
+                Console.WriteLine($"{r.Table,-26} {r.SourceRows,10} {r.TargetRows,10}");
 
             if (to == DatabaseProvider.Postgres)
             {
@@ -142,6 +155,30 @@ namespace RensaioBackend.Data
                 Console.WriteLine($"Done. Start Rensaio with Database__Provider=sqlite (or no Database__* settings) to use {sqlite.SqlitePath}.");
             }
             return 0;
+        }
+
+        private static async Task<bool> HasPostgresDataAsync(PostgresAppDbContext db, CancellationToken token)
+        {
+            var connection = db.Database.GetDbConnection();
+            if (connection.State != System.Data.ConnectionState.Open)
+                await connection.OpenAsync(token).ConfigureAwait(false);
+            var tables = new List<(string Schema, string Table)>();
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname = current_schema() AND tablename <> '__EFMigrationsHistory'";
+                await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
+                while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    tables.Add((reader.GetString(0), reader.GetString(1)));
+            }
+            foreach (var (schema, table) in tables)
+            {
+                await using var command = connection.CreateCommand();
+                static string Quote(string name) => "\"" + name.Replace("\"", "\"\"") + "\"";
+                command.CommandText = $"SELECT EXISTS (SELECT 1 FROM {Quote(schema)}.{Quote(table)})";
+                if ((bool)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!)
+                    return true;
+            }
+            return false;
         }
     }
 }
