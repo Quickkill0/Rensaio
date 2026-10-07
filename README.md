@@ -106,7 +106,9 @@ It uses the power of  **MIHON extensions** to connect with multiple sources.
   **Delete** keeps files unless **Delete physical files** is selected. Selecting it
   removes the complete series folder (archives, covers, metadata and other files).
   Paths outside the library or containing symbolic links are refused. Storage errors
-  are reported and the library record is retained; check permissions before retrying.
+  are shown in the delete dialog and the library record is retained. The dialog keeps
+  your physical-files choice on failure so you can resolve the problem and retry, or
+  cancel; check permissions and remove unsafe links before retrying.
 
 - 🔄 **Auto-Updates**  
   Extensions are kept up to date.
