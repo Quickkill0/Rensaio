@@ -159,7 +159,7 @@ export function ConfirmSeriesStep({
     formState.originalAugmentedResponse?.startChapter?.toString() ?? "",
   );
   const displayName = formState.displayName ?? "";
-  const displayNameIsValid = displayName.trim().length <= 250 && !/[\u0000-\u001f\u007f]/.test(displayName);
+  const displayNameIsValid = displayName.trim().length <= 250 && !/\p{Cc}/u.test(displayName);
   const separatePathIsValid = !formState.createSeparateInstance || Boolean(formState.storagePath?.trim());
   const startChapterIsValid = startChapterInput.trim() === "" ||
     (Number.isFinite(Number(startChapterInput)) && Number(startChapterInput) >= 0);
@@ -739,7 +739,11 @@ export function ConfirmSeriesStep({
                   <Switch
                     id="separate-instance"
                     checked={formState.createSeparateInstance ?? false}
-                    onCheckedChange={(checked) => setFormState((prev) => ({ ...prev, createSeparateInstance: checked }))}
+                    onCheckedChange={(checked) => {
+                      pathManuallyChanged.current = checked;
+                      setEditableStoragePath("");
+                      setFormState((prev) => ({ ...prev, createSeparateInstance: checked, storagePath: undefined }));
+                    }}
                     aria-describedby="separate-instance-help"
                   />
                   <Label htmlFor="separate-instance" className="cursor-pointer text-sm font-medium">Create a separate library entry</Label>
@@ -761,8 +765,9 @@ export function ConfirmSeriesStep({
                       placeholder="Choose a new, unused folder"
                     />
                     <p id="separate-path-help" className="text-xs leading-relaxed text-muted-foreground">
-                      Choose a new, unused folder inside your storage root, such as Berserk-Italian.
-                      This entry will not merge with matching titles. The server rejects occupied or unsafe folders.
+                      Enter a new relative folder name inside your storage root, such as Manga/Berserk-Italian,
+                      not a full absolute path. This entry will not merge with matching titles.
+                      The server rejects occupied or unsafe folders.
                       A custom name does not automatically change this path.
                     </p>
                     {!separatePathIsValid && <p role="alert" className="text-xs text-destructive">Enter a new storage folder.</p>}
