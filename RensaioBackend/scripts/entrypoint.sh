@@ -51,4 +51,4 @@ export LD_LIBRARY_PATH="${IKVM_LIB_PATH}:${LD_LIBRARY_PATH}"
 umask "$UMASK"
 
 # Run the app as the correct user
-exec gosu "$user_name" xvfb-run --auto-servernum /app/RensaioBackend
+exec gosu "$user_name" xvfb-run --auto-servernum /app/RensaioBackend "$@"
