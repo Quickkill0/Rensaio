@@ -139,6 +139,19 @@ It uses the power of  **MIHON extensions** to connect with multiple sources.
 
 - 🖼️ **Extras**
   - Stores `cover.jpg` per series
+  - This fork optionally injects that existing JPEG into **new** CBZ files via
+    **Settings → Storage → Include series cover in new CBZ files** (off by default).
+    Choose the cover provider using the existing series source settings. The cover
+    is `0000-cover.jpg`, first in ZIP and natural filename order, with ComicInfo
+    `Pages/Page Image="0" Type="FrontCover"` and an updated total PageCount.
+    Only the fixed `cover.jpg` under that series in configured storage is read;
+    symlinks/path escapes are refused, JPEG bytes/decoding are validated, and
+    limits are 5 MiB, 8192 pixels per side, and 32 megapixels. Missing/invalid
+    covers log a message and leave the chapter without an injected cover.
+    There is no new remote fetch, RSS/scraping service, upload endpoint, manual
+    chapter-cover editor, or retroactive archive modification. Existing archives
+    remain untouched. Each CBZ repeats the cover bytes, so enable only if you
+    accept the extra disk usage. Archive-reader page counts include the cover.
   - Stores `rensaio.json` for full metadata mapping, and read-state stored with you series.
   - External Domain Support for reverse proxy scenarios.
   - Support for jxl, jp2, avif image formats, with real-time transcoding for clients not supporting them.
