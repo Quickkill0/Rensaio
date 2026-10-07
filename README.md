@@ -109,6 +109,11 @@ It uses the power of  **MIHON extensions** to connect with multiple sources.
   are shown in the delete dialog and the library record is retained. The dialog keeps
   your physical-files choice on failure so you can resolve the problem and retry, or
   cancel; check permissions and remove unsafe links before retrying.
+  If a reader removes the entire folder of a previously downloaded/imported series,
+  its next refresh/download attempt automatically pauses it rather than recreating
+  the folder. Resume explicitly to download again. New subscriptions are unaffected;
+  deleting an individual chapter still follows the usual completionist behavior.
+  This check runs with refresh/download work, not a continuous filesystem watcher.
 
 - 🔄 **Auto-Updates**  
   Extensions are kept up to date.

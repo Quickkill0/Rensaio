@@ -842,6 +842,10 @@ namespace RensaioBackend.Services.Series
                 return JobResult.Delete;
             }
 
+            // Detect a reader-deleted series directory before remote refresh/state writes.
+            if (await _downloadCommand.PauseIfSeriesFolderMissingAsync(series.Id, token).ConfigureAwait(false))
+                return JobResult.Success;
+
             ISourceInterop src;
             try
             {
@@ -984,6 +988,9 @@ namespace RensaioBackend.Services.Series
             // Recalculate release cadence after fetching new chapters
             await _cadenceService.RecalculateCadenceAsync(series.Id, token).ConfigureAwait(false);
 
+            // Check again after network work, before it can recreate a reader-deleted folder.
+            if (await _downloadCommand.PauseIfSeriesFolderMissingAsync(series.Id, token).ConfigureAwait(false))
+                return JobResult.Success;
             // Sync rensaio.json after metadata refresh (series.Title, Artist, etc. may have changed)
             await _stateService.SyncToRensaioJsonAsync(series.Id, token).ConfigureAwait(false);
 
