@@ -47,18 +47,29 @@ namespace Mihon.ExtensionsBridge.Core.Utilities
                 decimal known = Convert.ToDecimal(chapterNumber.Value);
 
                 // Some extensions report only the whole part ("Capitolo 08.5" as 8), so the half
-                // chapter ends up with the same number as the chapter before it. When the name
-                // carries that same number with a fraction, the name is the more precise one.
+                // chapter ends up with the same number as the chapter before it. Only adopt an
+                // explicit decimal fraction, not synthetic suffixes like "8extra" or "8a".
                 if (known >= 0 && known == decimal.Truncate(known))
                 {
-                    decimal fromName = ParseChapterNumber(mangaTitle, chapterName, null);
-                    if (fromName != known && decimal.Truncate(fromName) == known)
+                    var match = GetChapterNumberMatch(mangaTitle, chapterName, normalizeHyphens: false);
+                    if (match != null && match.Groups[2].Success &&
+                        decimal.TryParse(match.Groups[1].Value + match.Groups[2].Value,
+                            NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out decimal fromName) &&
+                        fromName != known && decimal.Truncate(fromName) == known)
                         return fromName;
                 }
 
                 return known;
             }
 
+            var numberMatch = GetChapterNumberMatch(mangaTitle, chapterName, normalizeHyphens: true);
+            return numberMatch == null
+                ? Convert.ToDecimal(chapterNumber ?? -1.0f)
+                : GetChapterNumberFromMatch(numberMatch);
+        }
+
+        private static Match? GetChapterNumberMatch(string mangaTitle, string chapterName, bool normalizeHyphens)
+        {
             // Get chapter title with lower case
             var cleanChapterName = (chapterName ?? string.Empty).ToLowerInvariant();
 
@@ -70,9 +81,9 @@ namespace Mihon.ExtensionsBridge.Core.Utilities
 
             cleanChapterName = cleanChapterName
                     .Trim()
-                    // Remove commas or hyphens (normalize to '.')
+                    // Normalize decimal commas; only the unknown-number fallback treats hyphens as decimals.
                     .Replace(',', '.')
-                    .Replace('-', '.')
+                    .Replace('-', normalizeHyphens ? '.' : ' ')
                     // Remove unwanted white spaces.
                     .Replace(UnwantedWhiteSpace, "");
 
@@ -81,7 +92,7 @@ namespace Mihon.ExtensionsBridge.Core.Utilities
 
             if (numberMatches.Count == 0)
             {
-                return Convert.ToDecimal(chapterNumber ?? -1.0f);
+                return null;
             }
 
             if (numberMatches.Count > 1)
@@ -92,16 +103,16 @@ namespace Mihon.ExtensionsBridge.Core.Utilities
                 // Check base case ch.xx
                 var basicMatch = Basic.Match(name);
                 if (basicMatch.Success)
-                    return GetChapterNumberFromMatch(basicMatch);
+                    return basicMatch;
 
                 // Need to find again; first number might already be removed
                 var numberMatch = Number.Match(name);
                 if (numberMatch.Success)
-                    return GetChapterNumberFromMatch(numberMatch);
+                    return numberMatch;
             }
 
             // Return the first number encountered
-            return GetChapterNumberFromMatch(numberMatches[0]);
+            return numberMatches[0];
         }
 
         private static decimal GetChapterNumberFromMatch(Match match)
