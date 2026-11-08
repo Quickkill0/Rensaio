@@ -40,7 +40,8 @@ namespace RensaioBackend.Services.Downloads
         private readonly ILogger<DownloadCommandService> _logger;
         private readonly Series.SeriesStateService _stateService;
         private readonly HashCacheService _hashCache;
-        private static readonly KeyedAsyncLock _lock = new KeyedAsyncLock();
+        /// <summary>Held per series by anything that writes or renames its chapter archives.</summary>
+        internal static readonly KeyedAsyncLock SeriesFileLock = new KeyedAsyncLock();
 
         public DownloadCommandService(
             MihonBridgeService mihon,
@@ -167,12 +168,13 @@ namespace RensaioBackend.Services.Downloads
             float step = 100 / (float)(ch.PageCount);
             float acum = 0;
             int pagesWritten = 0;
-            string tempZipPath = Path.Combine(_tempFolder, zipFile);
+            // Keyed by source, not by the archive name: two sources can compute the same name.
+            string tempZipPath = Path.Combine(_tempFolder, $"{ch.SeriesProviderId:N}-{ch.Chapter.ParsedNumber}.cbz");
             bool breaked = false;
 
             try
             {
-                lock (_lock)
+                lock (SeriesFileLock)
                 {
                     if (!Directory.Exists(_tempFolder))
                         Directory.CreateDirectory(_tempFolder);
@@ -260,7 +262,7 @@ namespace RensaioBackend.Services.Downloads
 
                 string finalPath = Path.Combine(dirPath, zipFile);
 
-                using (var n = await _lock.LockAsync(ch.SeriesId.ToString(), token).ConfigureAwait(false))
+                using (var n = await SeriesFileLock.LockAsync(ch.SeriesId.ToString(), token).ConfigureAwait(false))
                 {
                     SeriesProviderEntity? providerr = await _db.SeriesProviders.FirstOrDefaultAsync(a => a.Id == ch.SeriesProviderId, token).ConfigureAwait(false);
                     if (providerr == null)
@@ -286,6 +288,11 @@ namespace RensaioBackend.Services.Downloads
                         return JobResult.Success;
                     }
 
+                    // Never write over a file another source of the series stores.
+                    List<DuplicateChapterRules.StoredCopy> storedCopies = s.Sources.StoredCopies().ToList();
+                    zipFile = DuplicateChapterRules.DistinctArchiveName(providerr.Id, storedCopies, zipFile);
+                    finalPath = Path.Combine(dirPath, zipFile);
+
                     try
                     {
                         await Task.Run(() => File.Move(tempZipPath, finalPath, true), token).ConfigureAwait(false);
@@ -306,10 +313,11 @@ namespace RensaioBackend.Services.Downloads
                     }
 
                     // A re-download can produce a different file name (the chapter title or the
-                    // zero padding changed). The old file is no longer referenced anywhere, so
-                    // remove it instead of leaving an orphaned second copy on disk.
+                    // zero padding changed). Remove the old file instead of leaving an orphaned
+                    // second copy on disk, unless another source still stores its copy there.
                     string? previousFile = cha.Filename;
-                    if (!string.IsNullOrEmpty(previousFile) && !DuplicateChapterRules.IsSameArchive(previousFile, zipFile))
+                    if (!string.IsNullOrEmpty(previousFile) && !DuplicateChapterRules.IsSameArchive(previousFile, zipFile)
+                        && !DuplicateChapterRules.IsFileUsedByOtherSource(providerr.Id, storedCopies, previousFile))
                     {
                         _hashCache.DeleteChapterHash(s.StoragePath, previousFile);
                         TryDeleteFile(Path.Combine(dirPath, previousFile));
@@ -330,33 +338,35 @@ namespace RensaioBackend.Services.Downloads
 
                     if (providerr.IsStorage)
                     {
-                        List<Models.Chapter> chapters = s.Sources.Where(a => !a.IsDisabled && !a.IsUninstalled && !a.IsStorage)
-                            .SelectMany(a => a.Chapters).Where(c => c.Number == ch.Chapter.ParsedNumber && !string.IsNullOrEmpty(c.Filename)).ToList();
-                        if (chapters.Count > 0)
+                        //Delete temporary sources chapters if needed, since we have the storage one
+                        List<SeriesProviderEntity> temporarySources = s.Sources.Where(a => !a.IsDisabled && !a.IsUninstalled && !a.IsStorage).ToList();
+                        List<DuplicateChapterRules.StoredCopy> keptCopies = s.Sources.Except(temporarySources).StoredCopies().ToList();
+                        foreach (SeriesProviderEntity temporary in temporarySources)
                         {
-                            //Delete temporary sources chapters if needed, since we have the storage one
-                            foreach (Models.Chapter c in chapters)
+                            foreach (Models.Chapter c in temporary.Chapters.Where(c => c.Number == ch.Chapter.ParsedNumber && !string.IsNullOrEmpty(c.Filename)))
                             {
-                                // Clean up hash cache before removing the filename
-                                if (!string.IsNullOrEmpty(c.Filename))
+                                // A file a kept source still points at stays on disk; only this row is cleared.
+                                if (!DuplicateChapterRules.IsFileUsedByOtherSource(temporary.Id, keptCopies, c.Filename!))
                                 {
-                                    _hashCache.DeleteChapterHash(s.StoragePath, c.Filename);
-                                }
+                                    // Clean up hash cache before removing the filename
+                                    _hashCache.DeleteChapterHash(s.StoragePath, c.Filename!);
 
-                                string rfname = Path.Combine(appSettings.StorageFolder, s.StoragePath, c.Filename!);
-                                if (File.Exists(rfname))
-                                {
-                                    try
+                                    string rfname = Path.Combine(appSettings.StorageFolder, s.StoragePath, c.Filename!);
+                                    if (File.Exists(rfname))
                                     {
-                                        File.Delete(rfname);
-                                    }
-                                    catch
-                                    {
-                                        _logger.LogError("Unable to delete file {rfname}", rfname);
+                                        try
+                                        {
+                                            File.Delete(rfname);
+                                        }
+                                        catch
+                                        {
+                                            _logger.LogError("Unable to delete file {rfname}", rfname);
+                                        }
                                     }
                                 }
                                 c.Filename = string.Empty;
                                 c.IsDeleted = true;
+                                _db.Touch(temporary, a => a.Chapters);
                             }
                         }
                         await _db.SaveChangesAsync(token).ConfigureAwait(false);
