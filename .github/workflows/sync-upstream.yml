@@ -1,0 +1,95 @@
+name: Sync main with upstream
+
+# Fork housekeeping. `main` is an exact copy of the upstream `main`; the fork's
+# own work lives on `development`. Once a day this job fast-forwards `main` and,
+# when upstream has commits `development` lacks, opens a pull request that
+# brings them in.
+
+on:
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+  push:
+    branches: [chore/sync-upstream-job]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: maxpiva/Rensaio
+  MIRROR_BRANCH: main
+  WORK_BRANCH: test/sync-target
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  sync:
+    # Only meaningful in a fork; never run in the upstream repository itself.
+    if: github.repository != 'maxpiva/Rensaio'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fast-forward the mirror branch
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY%%/*}"
+          upstream_owner="${UPSTREAM%%/*}"
+
+          cmp=$(gh api "repos/$GITHUB_REPOSITORY/compare/$upstream_owner:$MIRROR_BRANCH...$owner:$MIRROR_BRANCH")
+          ahead=$(echo "$cmp" | jq -r .ahead_by)
+          behind=$(echo "$cmp" | jq -r .behind_by)
+          echo "$MIRROR_BRANCH is $ahead ahead of and $behind behind $UPSTREAM"
+
+          if [ "$ahead" -ne 0 ]; then
+            echo "::error::$MIRROR_BRANCH has $ahead commit(s) that $UPSTREAM does not. It must stay an exact copy; move that work to $WORK_BRANCH and reset $MIRROR_BRANCH."
+            exit 1
+          fi
+
+          if [ "$behind" -eq 0 ]; then
+            echo "Already up to date."
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/merge-upstream" -f branch="$MIRROR_BRANCH" --jq '"\(.merge_type): \(.message)"'
+          fi
+
+          up=$(gh api "repos/$UPSTREAM/git/ref/heads/$MIRROR_BRANCH" --jq .object.sha)
+          mine=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$MIRROR_BRANCH" --jq .object.sha)
+          if [ "$up" != "$mine" ]; then
+            echo "::error::$MIRROR_BRANCH ($mine) does not match $UPSTREAM ($up) after syncing."
+            exit 1
+          fi
+          echo "MIRROR_SHA=$mine" >> "$GITHUB_ENV"
+
+      - name: Propose new upstream commits to the working branch
+        run: |
+          set -euo pipefail
+          cmp=$(gh api "repos/$GITHUB_REPOSITORY/compare/$WORK_BRANCH...$MIRROR_SHA")
+          missing=$(echo "$cmp" | jq -r .ahead_by)
+          if [ "$missing" -eq 0 ]; then
+            echo "$WORK_BRANCH already contains everything on $MIRROR_BRANCH."
+            exit 0
+          fi
+
+          # The pull request gets its own branch so conflicts are resolved
+          # there and never on the mirror branch.
+          branch="sync/upstream-${MIRROR_SHA:0:7}"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$branch" >/dev/null 2>&1; then
+            echo "$branch already exists, so this upstream state was already proposed."
+            exit 0
+          fi
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$branch" -f sha="$MIRROR_SHA" --jq .ref
+
+          {
+            echo "Upstream ($UPSTREAM \`$MIRROR_BRANCH\`) has $missing commit(s) that \`$WORK_BRANCH\` does not have yet."
+            echo
+            echo "Merge with a merge commit. If there are conflicts, resolve them on \`$branch\`, never on \`$MIRROR_BRANCH\`."
+            echo
+            echo "## Commits"
+            echo "$cmp" | jq -r '.commits[] | "- `\(.sha[0:7])` \(.commit.message | split("\n")[0])"'
+          } > body.md
+
+          gh pr create --repo "$GITHUB_REPOSITORY" --base "$WORK_BRANCH" --head "$branch" \
+            --title "Sync with upstream: $missing new commit(s) from $UPSTREAM" \
+            --body-file body.md
