@@ -9,8 +9,6 @@ on:
   schedule:
     - cron: '17 9 * * *'
   workflow_dispatch:
-  push:
-    branches: [chore/sync-upstream-job]
 
 permissions:
   contents: write
@@ -23,7 +21,7 @@ concurrency:
 env:
   UPSTREAM: maxpiva/Rensaio
   MIRROR_BRANCH: main
-  WORK_BRANCH: test/sync-target
+  WORK_BRANCH: development
   GH_TOKEN: ${{ github.token }}
 
 jobs:
