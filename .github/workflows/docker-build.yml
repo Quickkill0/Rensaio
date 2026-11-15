@@ -6,7 +6,7 @@ on:
       branch:
         description: 'Branch to build'
         required: true
-        default: '2.0'
+        default: 'development'
         type: string
       platforms:
         description: 'Target platforms (comma-separated)'
@@ -18,7 +18,7 @@ on:
           - 'linux/arm64'
           - 'linux/amd64,linux/arm64'
       tag:
-        description: 'Docker image tag (leave empty for branch name)'
+        description: 'Docker image tag (leave empty: "latest" for development, branch name otherwise)'
         required: false
         type: string
 
@@ -103,6 +103,9 @@ jobs:
         run: |
           if [ -n "${{ inputs.tag }}" ]; then
             echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          elif [ "${{ inputs.branch }}" = "development" ]; then
+            # The fork's working branch publishes the image the server pulls
+            echo "tag=latest" >> $GITHUB_OUTPUT
           else
             # Sanitize branch name for Docker tag
             BRANCH="${{ inputs.branch }}"
